@@ -56,7 +56,6 @@ function generateStudentId(classId, name, index) {
     .replace(/[^a-z0-9]+/gi, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 32);
-
   const suffix = index >= 0 ? `-${index + 1}` : '';
   return `${classId}-${normalizedName || 'ogrenci'}${suffix}`;
 }
@@ -66,25 +65,16 @@ function sanitizeStudentsData(rawStudents) {
     return { students: {}, idMap: {} };
   }
 
-  const studentsByClass = {};
-
   const sanitized = {};
   const idMap = {};
 
   Object.entries(rawStudents).forEach(([classId, studentList]) => {
     if (!Array.isArray(studentList)) {
-      studentsByClass[classId] = [];
-      return;
-    }
-
-    studentsByClass[classId] = studentList
-
       sanitized[classId] = [];
       return;
     }
 
     sanitized[classId] = studentList
- 
       .map((student, index) => {
         let name = '';
         let originalId = '';
@@ -112,7 +102,6 @@ function sanitizeStudentsData(rawStudents) {
       .filter(Boolean);
   });
 
-  return { students: studentsByClass, idMap };
   return { students: sanitized, idMap };
 }
 
@@ -122,13 +111,6 @@ function sanitizeRecordsData(rawRecords, studentsData, idMap = {}) {
   }
 
   const validStudentIds = new Set();
-  Object.values(studentsData || {}).forEach((studentList = []) => {
-    studentList.forEach((student) => {
-      if (student && typeof student.id === 'string') {
-        validStudentIds.add(student.id);
-      }
-    });
-
   Object.values(studentsData).forEach((studentList) => {
     studentList.forEach((student) => validStudentIds.add(student.id));
   });
@@ -147,28 +129,6 @@ function sanitizeRecordsData(rawRecords, studentsData, idMap = {}) {
         sanitizedRecord[entryKey] = entryValue;
         return;
       }
-
-      const match = entryKey.match(/^(.*)-(\d+)$/);
-      if (!match) {
-        return;
-      }
-
-      const [, rawStudentId, lessonNumber] = match;
-      const trimmedId = rawStudentId.trim();
-
-      let studentId = null;
-      if (validStudentIds.has(rawStudentId)) {
-        studentId = rawStudentId;
-      } else if (validStudentIds.has(trimmedId)) {
-        studentId = trimmedId;
-      } else if (idMap[rawStudentId] && validStudentIds.has(idMap[rawStudentId])) {
-        studentId = idMap[rawStudentId];
-      } else if (idMap[trimmedId] && validStudentIds.has(idMap[trimmedId])) {
-        studentId = idMap[trimmedId];
-      }
-
-      if (!studentId) {
-        return;
 
       const lessonMatch = entryKey.match(/^(.*)-(\d+)$/);
       if (!lessonMatch) return;
@@ -225,9 +185,36 @@ function getAbsenceLimit(classId) {
   return absenceLimits.default;
 }
 
+// 🔴 HATA YÖNETİMİ EKLENDİ
+function isLocalStorageAvailable() {
+  try {
+    const testKey = '__storage_test__';
+    localStorage.setItem(testKey, testKey);
+    localStorage.removeItem(testKey);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function loadStoredData() {
-  if (typeof window === 'undefined') {
-    return { students: {}, records: {} };
+  const hasLocalStorage = typeof window !== 'undefined' && isLocalStorageAvailable();
+
+  if (!hasLocalStorage) {
+    // 🟡 Fallback: localStorage yoksa mock veri döndür
+    console.warn('localStorage kullanılamıyor. Mock veri kullanılıyor.');
+    return {
+      students: {
+        '9': [
+          { id: '9-ali-yilmaz-1', name: 'Ali Yılmaz' },
+          { id: '9-ayse-demir-2', name: 'Ayşe Demir' },
+        ],
+        '10': [
+          { id: '10-mehmet-kaya-1', name: 'Mehmet Kaya' },
+        ],
+      },
+      records: {},
+    };
   }
 
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -237,9 +224,6 @@ function loadStoredData() {
 
   try {
     const data = JSON.parse(stored) || {};
-    const { students: sanitizedStudents, idMap } = sanitizeStudentsData(data.students || {});
-    const sanitizedRecords = sanitizeRecordsData(data.records || {}, sanitizedStudents, idMap);
-
     const { students: sanitizedStudents, idMap } = sanitizeStudentsData(data.students);
     const sanitizedRecords = sanitizeRecordsData(data.records, sanitizedStudents, idMap);
 
@@ -248,14 +232,10 @@ function loadStoredData() {
       JSON.stringify(data.records || {}) !== JSON.stringify(sanitizedRecords);
 
     if (shouldRewriteStorage) {
-      try {
-        localStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify({ students: sanitizedStudents, records: sanitizedRecords })
-        );
-      } catch (storageError) {
-        console.warn('Failed to update stored data', storageError);
-      }
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ students: sanitizedStudents, records: sanitizedRecords })
+      );
     }
 
     return {
@@ -263,8 +243,16 @@ function loadStoredData() {
       records: sanitizedRecords,
     };
   } catch (error) {
-    console.error('Failed to parse stored data', error);
-    return { students: {}, records: {} };
+    console.error('Veri yüklenirken hata oluştu:', error);
+    // 🟡 Hata durumunda da mock veri döndür
+    return {
+      students: {
+        '9': [
+          { id: '9-ogrenci-1', name: 'Örnek Öğrenci' },
+        ],
+      },
+      records: {},
+    };
   }
 }
 
@@ -279,12 +267,27 @@ function AttendanceSystem() {
   const [activeTab, setActiveTab] = useState('yoklama');
   const [newStudentName, setNewStudentName] = useState('');
   const [manualLessonCount, setManualLessonCount] = useState('');
+  const [storageError, setStorageError] = useState(false);
 
   useEffect(() => {
+    const hasLocalStorage = typeof window !== 'undefined' && isLocalStorageAvailable();
+    if (!hasLocalStorage) {
+      setStorageError(true);
+    }
+
     const data = loadStoredData();
     setStudents(data.students);
     setSavedRecords(data.records);
+
+    if (!hasLocalStorage) {
+      setMessage({
+        type: 'warning',
+        text: 'Tarayıcınızda veri saklama (localStorage) desteklenmiyor. Veriler geçici olarak gösteriliyor.',
+      });
+    }
   }, []);
+
+  // ... (geri kalan fonksiyonlar ve JSX aynı kalır)
 
   const scheduleLessonCount = useMemo(() => {
     const cls = classes.find((c) => c.id === selectedClass);
@@ -306,7 +309,6 @@ function AttendanceSystem() {
     if (!selectedRecordKey) {
       setAttendance({});
       setManualLessonCount('');
-      setMessage({ type: '', text: '' });
       return;
     }
 
@@ -315,8 +317,6 @@ function AttendanceSystem() {
       const { __lessonCount, ...rest } = record;
       const sanitized = Object.fromEntries(Object.entries(rest).filter(([key]) => !key.startsWith('__')));
       setAttendance(sanitized);
-      setMessage({ type: 'info', text: 'Bu tarih için kayıtlı yoklama yüklendi.' });
-
       if (scheduleLessonCount === 0) {
         const inferredCount = typeof __lessonCount === 'number' ? __lessonCount : extractLessonCount(rest);
         setManualLessonCount(inferredCount > 0 ? String(inferredCount) : '');
@@ -325,7 +325,6 @@ function AttendanceSystem() {
       }
     } else {
       setAttendance({});
-      setMessage({ type: '', text: '' });
       setManualLessonCount(scheduleLessonCount === 0 ? '' : '');
     }
   }, [savedRecords, scheduleLessonCount, selectedRecordKey]);
@@ -364,14 +363,28 @@ function AttendanceSystem() {
   };
 
   const saveToStorage = (studentsData, recordsData) => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        students: studentsData,
-        records: recordsData,
-      })
-    );
+    if (typeof window === 'undefined' || !isLocalStorageAvailable()) {
+      setMessage({
+        type: 'warning',
+        text: 'Veri kaydedilemedi: localStorage kullanılamıyor.',
+      });
+      return;
+    }
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          students: studentsData,
+          records: recordsData,
+        })
+      );
+    } catch (e) {
+      console.error('Kayıt sırasında hata:', e);
+      setMessage({
+        type: 'error',
+        text: 'Veri kaydedilemedi. Tarayıcı ayarlarınızı kontrol edin.',
+      });
+    }
   };
 
   const handleAttendanceChange = (studentId, lessonNumber, status) => {
@@ -628,6 +641,12 @@ function AttendanceSystem() {
                 </div>
                 <p className="font-medium">{message.text}</p>
               </div>
+            </div>
+          )}
+          {storageError && (
+            <div className="p-4 bg-yellow-50 border-t border-yellow-200 text-yellow-800 text-sm font-medium flex items-start gap-2">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              Tarayıcınızda veri kalıcı olarak saklanamaz. Sayfa yenilendiğinde veriler kaybolabilir.
             </div>
           )}
         </div>
