@@ -69,7 +69,6 @@ function extractLessonCount(record) {
   }, 0);
 }
 
-
 function getAbsenceLimit(classId) {
   if (classId.startsWith('12-') || classId.startsWith('mezun-')) {
     return absenceLimits.senior;
@@ -110,7 +109,6 @@ function AttendanceSystem() {
   const [activeTab, setActiveTab] = useState('yoklama');
   const [newStudentName, setNewStudentName] = useState('');
   const [manualLessonCount, setManualLessonCount] = useState('');
-
 
   useEffect(() => {
     const data = loadStoredData();
@@ -166,11 +164,6 @@ function AttendanceSystem() {
   const manualLessonCountNumber = manualLessonCount === '' ? null : Number(manualLessonCount);
 
   const effectiveLessonCount = useMemo(() => {
-  const classStudents = useMemo(() => students[selectedClass] || [], [students, selectedClass]);
-
-  const manualLessonCountNumber = manualLessonCount === '' ? null : Number(manualLessonCount);
-
-  const lessonCount = useMemo(() => {
     if (scheduleLessonCount > 0) {
       return scheduleLessonCount;
     }
@@ -185,9 +178,6 @@ function AttendanceSystem() {
   const shouldShowManualLessonPrompt =
     scheduleLessonCount === 0 && currentClassStudents.length > 0 && effectiveLessonCount === 0;
   const areAttendanceActionsDisabled = effectiveLessonCount === 0 || currentClassStudents.length === 0;
-
-  const shouldShowManualLessonPrompt = scheduleLessonCount === 0 && classStudents.length > 0 && lessonCount === 0;
-  const areAttendanceActionsDisabled = lessonCount === 0 || classStudents.length === 0;
 
   const handleManualLessonCountChange = (event) => {
     const { value } = event.target;
@@ -204,29 +194,6 @@ function AttendanceSystem() {
     const safeValue = Math.max(0, Math.floor(numericValue));
     setManualLessonCount(safeValue > 0 ? String(safeValue) : '');
   };
-
-  useEffect(() => {
-    if (selectedClass && selectedDate) {
-      const key = `${selectedClass}-${selectedDate}`;
-      const record = savedRecords[key];
-      if (record) {
-        setAttendance(record);
-        setMessage({ type: 'info', text: 'Bu tarih için kayıtlı yoklama yüklendi.' });
-      } else {
-        setAttendance({});
-        setMessage({ type: '', text: '' });
-      }
-    }
-  }, [selectedClass, selectedDate, savedRecords]);
-
-  const classStudents = useMemo(() => students[selectedClass] || [], [students, selectedClass]);
-
-  const lessonCount = useMemo(() => {
-    const cls = classes.find((c) => c.id === selectedClass);
-    if (!cls) return 0;
-    const date = new Date(`${selectedDate}T00:00:00`);
-    return cls.schedule[dayNames[date.getDay()]] || 0;
-  }, [classes, selectedClass, selectedDate]);
 
   const saveToStorage = (studentsData, recordsData) => {
     if (typeof window === 'undefined') return;
@@ -250,7 +217,6 @@ function AttendanceSystem() {
     const key = `${selectedClass}-${selectedDate}`;
 
     if (effectiveLessonCount === 0) {
-    if (lessonCount === 0) {
       setMessage({ type: 'error', text: 'Bugün için ders sayısını girmeniz gerekiyor.' });
       return;
     }
@@ -258,13 +224,6 @@ function AttendanceSystem() {
     const recordToSave = { ...attendance, __lessonCount: effectiveLessonCount };
     const newRecords = { ...savedRecords, [key]: recordToSave };
 
-    const recordToSave = { ...attendance, __lessonCount: lessonCount };
-    const newRecords = { ...savedRecords, [key]: recordToSave };
-      setMessage({ type: 'error', text: 'Bu sınıfın bu gün için ders programı yok!' });
-      return;
-    }
-
-    const newRecords = { ...savedRecords, [key]: { ...attendance } };
     setSavedRecords(newRecords);
     saveToStorage(students, newRecords);
     setMessage({ type: 'success', text: 'Yoklama başarıyla kaydedildi!' });
@@ -311,13 +270,6 @@ function AttendanceSystem() {
     currentClassStudents.forEach((student) => {
       const row = [student.name];
       for (let i = 1; i <= effectiveLessonCount; i += 1) {
-
-      Array.from({ length: lessonCount }, (_, i) => `${i + 1}. Ders`).join(',') +
-      '\n';
-
-    classStudents.forEach((student) => {
-      const row = [student.name];
-      for (let i = 1; i <= lessonCount; i += 1) {
         const status = attendance[`${student.id}-${i}`] || '-';
         const statusText =
           status === 'geldi'
@@ -528,14 +480,6 @@ function AttendanceSystem() {
           {activeTab === 'yoklama' && selectedClass && currentClassStudents.length > 0 && effectiveLessonCount > 0 && (
             <div className="space-y-6">
               <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 p-5 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100">
-
-          {activeTab === 'yoklama' && selectedClass && classStudents.length > 0 && lessonCount > 0 && (
-            <div className="space-y-6">
-              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 p-5 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100">
-
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-5 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100">
- 
-
                 <div className="flex items-center gap-3">
                   <div className="bg-indigo-600 text-white p-3 rounded-xl">
                     <Users className="w-6 h-6" />
@@ -544,7 +488,6 @@ function AttendanceSystem() {
                     <p className="text-sm text-gray-600">Sınıf Bilgileri</p>
                     <p className="text-xl font-bold text-gray-900">
                       {currentClassStudents.length} öğrenci • {effectiveLessonCount} ders
-                      {classStudents.length} öğrenci • {lessonCount} ders
                     </p>
                   </div>
                 </div>
@@ -569,10 +512,6 @@ function AttendanceSystem() {
                     onClick={downloadCSV}
                     disabled={areAttendanceActionsDisabled}
                     className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-lg shadow-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                <div className="flex gap-2">
-                  <button
-                    onClick={downloadCSV}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-lg shadow-green-200"
                     type="button"
                   >
                     <Download className="w-4 h-4" /> CSV İndir
@@ -581,8 +520,6 @@ function AttendanceSystem() {
                     onClick={saveAttendance}
                     disabled={areAttendanceActionsDisabled}
                     className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-2 rounded-xl font-medium transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
-
-                    className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-2 rounded-xl font-medium transition-all shadow-lg shadow-indigo-200"
                     type="button"
                   >
                     <Save className="w-5 h-5" /> Kaydet
@@ -596,8 +533,6 @@ function AttendanceSystem() {
                     <tr className="bg-gradient-to-r from-gray-50 to-indigo-50">
                       <th className="p-4 text-left font-semibold text-gray-700 border-b-2 border-indigo-200">Öğrenci Adı</th>
                       {Array.from({ length: effectiveLessonCount }, (_, i) => (
-
-                      {Array.from({ length: lessonCount }, (_, i) => (
                         <th
                           key={i}
                           className="p-4 text-center font-semibold text-gray-700 border-b-2 border-indigo-200 whitespace-nowrap"
@@ -609,16 +544,12 @@ function AttendanceSystem() {
                   </thead>
                   <tbody>
                     {currentClassStudents.map((student, idx) => (
-
-                    {classStudents.map((student, idx) => (
                       <tr
                         key={student.id}
                         className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-indigo-50 transition-colors`}
                       >
                         <td className="p-4 font-medium text-gray-900 border-b border-gray-200">{student.name}</td>
                         {Array.from({ length: effectiveLessonCount }, (_, i) => {
-
-                        {Array.from({ length: lessonCount }, (_, i) => {
                           const key = `${student.id}-${i + 1}`;
                           const currentStatus = attendance[key] || '';
                           return (
@@ -654,8 +585,6 @@ function AttendanceSystem() {
           )}
 
           {activeTab === 'yoklama' && (!selectedClass || currentClassStudents.length === 0 || effectiveLessonCount === 0) && (
-
-          {activeTab === 'yoklama' && (!selectedClass || classStudents.length === 0 || lessonCount === 0) && (
             <div className="text-center py-20">
               <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-100 rounded-full mb-6">
                 <Calendar className="w-10 h-10 text-indigo-600" />
@@ -666,9 +595,6 @@ function AttendanceSystem() {
                   ? shouldShowManualLessonPrompt
                     ? 'Bu sınıf için bugüne ait ders sayısı tanımlı değil. Yukarıdaki alandan ders sayısını girerek yoklamayı başlatabilirsiniz.'
                     : 'Bu sınıf için seçilen tarihte ders bulunmuyor veya öğrenci listesi boş.'
-
-
-                  ? 'Bu sınıf için seçilen tarihte ders bulunmuyor veya öğrenci listesi boş.'
                   : 'Öncelikle üst kısımdan sınıf ve tarih seçerek yoklamayı başlatabilirsiniz.'}
               </p>
             </div>
@@ -724,8 +650,6 @@ function AttendanceSystem() {
               </div>
 
               {selectedClass && currentClassStudents.length > 0 && (
-
-              {selectedClass && classStudents.length > 0 && (
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900 mb-6">Öğrenci Devamsızlık Raporu</h2>
                   <div className="overflow-x-auto rounded-2xl border border-gray-200">
@@ -743,8 +667,6 @@ function AttendanceSystem() {
                       </thead>
                       <tbody>
                         {currentClassStudents.map((student) => {
-
-                        {classStudents.map((student) => {
                           const stats = calculateStudentStats(student.id, selectedClass);
                           const statusInfo = getStudentStatus(student.id, selectedClass);
                           const limits = getAbsenceLimit(selectedClass);
@@ -789,8 +711,6 @@ function AttendanceSystem() {
               )}
 
               {(!selectedClass || currentClassStudents.length === 0) && (
-
-              {(!selectedClass || classStudents.length === 0) && (
                 <div className="text-center py-20">
                   <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-100 rounded-full mb-6">
                     <FileText className="w-10 h-10 text-indigo-600" />
@@ -837,8 +757,6 @@ function AttendanceSystem() {
               </div>
 
               {currentClassStudents.length > 0 && (
-
-              {classStudents.length > 0 && (
                 <div className="bg-white border-2 border-gray-200 rounded-2xl p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -851,12 +769,6 @@ function AttendanceSystem() {
                   </div>
                   <div className="max-h-96 overflow-y-auto space-y-2">
                     {currentClassStudents.map((student, idx) => (
-
-                      {classStudents.length} öğrenci
-                    </span>
-                  </div>
-                  <div className="max-h-96 overflow-y-auto space-y-2">
-                    {classStudents.map((student, idx) => (
                       <div
                         key={student.id}
                         className="flex items-center justify-between bg-gradient-to-r from-gray-50 to-indigo-50 p-4 rounded-xl border border-gray-200 hover:shadow-md transition-all group"
