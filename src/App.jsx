@@ -51,6 +51,126 @@ const absenceLimits = {
   senior: { excused: 20, unexcused: 20, total: 40 },
 };
 
+function generateStudentId(classId, name, index) {
+  const normalizedName = String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+
+  const suffix = index >= 0 ? `-${index + 1}` : '';
+  return `${classId}-${normalizedName || 'ogrenci'}${suffix}`;
+}
+
+function sanitizeStudentsData(rawStudents) {
+  if (!rawStudents || typeof rawStudents !== 'object' || Array.isArray(rawStudents)) {
+    return { students: {}, idMap: {} };
+  }
+
+  const sanitized = {};
+  const idMap = {};
+
+  Object.entries(rawStudents).forEach(([classId, studentList]) => {
+    if (!Array.isArray(studentList)) {
+      sanitized[classId] = [];
+      return;
+    }
+
+    sanitized[classId] = studentList
+      .map((student, index) => {
+        let name = '';
+        let originalId = '';
+
+        if (student && typeof student === 'object') {
+          name = typeof student.name === 'string' ? student.name.trim() : '';
+          const rawId = typeof student.id === 'string' ? student.id : '';
+          originalId = rawId.trim();
+
+          if (rawId && rawId !== originalId) {
+            idMap[rawId] = originalId;
+          }
+        } else if (typeof student === 'string') {
+          name = student.trim();
+        }
+
+        if (!name) {
+          return null;
+        }
+
+        const generatedId = generateStudentId(classId, name, index);
+        const finalId = originalId || generatedId;
+
+        if (originalId && originalId !== finalId) {
+          idMap[originalId] = finalId;
+        }
+
+        return { id: finalId, name };
+      })
+      .filter(Boolean);
+  });
+
+  return { students: sanitized, idMap };
+}
+
+function sanitizeRecordsData(rawRecords, studentsData, idMap = {}) {
+  if (!rawRecords || typeof rawRecords !== 'object' || Array.isArray(rawRecords)) {
+    return {};
+  }
+
+  const validStudentIds = new Set();
+  Object.values(studentsData).forEach((studentList) => {
+    studentList.forEach((student) => validStudentIds.add(student.id));
+  });
+
+  const sanitized = {};
+
+  Object.entries(rawRecords).forEach(([recordKey, recordValue]) => {
+    if (!recordValue || typeof recordValue !== 'object') {
+      return;
+    }
+
+    const sanitizedRecord = {};
+
+    Object.entries(recordValue).forEach(([entryKey, entryValue]) => {
+      if (entryKey.startsWith('__')) {
+        sanitizedRecord[entryKey] = entryValue;
+        return;
+      }
+
+      const lessonMatch = entryKey.match(/^(.*)-(\d+)$/);
+      if (!lessonMatch) {
+        return;
+      }
+
+      const [, rawStudentId, lessonNumber] = lessonMatch;
+      let studentId = rawStudentId;
+
+      if (!validStudentIds.has(studentId)) {
+        const trimmedId = rawStudentId.trim();
+        if (trimmedId && validStudentIds.has(trimmedId)) {
+          studentId = trimmedId;
+        } else {
+          const mappedId = idMap[rawStudentId] || idMap[trimmedId];
+          if (!mappedId || !validStudentIds.has(mappedId)) {
+            return;
+          }
+          studentId = mappedId;
+        }
+      }
+
+      if (typeof entryValue === 'string' && statusMap[entryValue]) {
+        sanitizedRecord[`${studentId}-${lessonNumber}`] = entryValue;
+      }
+    });
+
+    if (Object.keys(sanitizedRecord).length > 0) {
+      sanitized[recordKey] = sanitizedRecord;
+    }
+  });
+
+  return sanitized;
+}
+
 function extractLessonCount(record) {
   if (!record) {
     return 0;
@@ -87,10 +207,28 @@ function loadStoredData() {
   }
 
   try {
-    const data = JSON.parse(stored);
+    const data = JSON.parse(stored) || {};
+    const { students: sanitizedStudents, idMap } = sanitizeStudentsData(data.students);
+    const sanitizedRecords = sanitizeRecordsData(data.records, sanitizedStudents, idMap);
+
+    const shouldRewriteStorage =
+      JSON.stringify(data.students || {}) !== JSON.stringify(sanitizedStudents) ||
+      JSON.stringify(data.records || {}) !== JSON.stringify(sanitizedRecords);
+
+    if (shouldRewriteStorage) {
+      try {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ students: sanitizedStudents, records: sanitizedRecords })
+        );
+      } catch (storageError) {
+        console.warn('Failed to update stored data', storageError);
+      }
+    }
+
     return {
-      students: data.students || {},
-      records: data.records || {},
+      students: sanitizedStudents,
+      records: sanitizedRecords,
     };
   } catch (error) {
     console.error('Failed to parse stored data', error);
