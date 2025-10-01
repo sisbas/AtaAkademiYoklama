@@ -1,15 +1,40 @@
 # Ata Akademi Yoklama Sistemi
 
-Ata Akademi için geliştirilen modern yoklama ve devamsızlık yönetim arayüzü. Proje React + Vite ile oluşturuldu ve Tailwind CSS ile stillendirildi. Tüm veriler kullanıcıların tarayıcısında saklanır; herhangi bir sunucuya ihtiyaç duymaz.
+Ata Akademi için geliştirilen modern yoklama ve devamsızlık yönetim arayüzü. Proje React + Vite ile oluşturuldu ve Tailwind CSS ile stillendirildi. Artık yoklama ekranında görünen tüm öğrenci verileri Neon üzerinde tutulan PostgreSQL veritabanından dinamik olarak çekilmektedir. Netlify Functions aracılığıyla çalışan sunucusuz API, istemcinin doğrudan veritabanı kimlik bilgilerini bilmesine gerek kalmadan güvenli veri aktarımı sağlar.
+
+## Veri Kaynağı ve Sunucusuz API
+
+- Netlify Functions içinde bulunan `students-db` fonksiyonu, `NEON_DATABASE_URL` ortam değişkeni ile belirtilen Neon veritabanına bağlanır.
+- Varsayılan kurulumda istemci `/.netlify/functions/students-db` uç noktasına istek gönderir. Geliştirme ortamında Netlify CLI ile çalışmak istemiyorsanız `VITE_STUDENTS_API` değişkeni ile tam URL verebilirsiniz.
+- `PUBLIC_MODE=true` şeklinde bir ortam değişkeni tanımlandığında API, ad ve soyad alanlarını maskeleyerek döndürür.
+
+### Ortam Değişkenleri
+
+Yerel geliştirme sırasında `.env` dosyası oluşturup aşağıdaki değişkenleri tanımlayabilirsiniz:
+
+```bash
+NEON_DATABASE_URL="postgresql://<kullanici>:<sifre>@<sunucu>/<veritabani>?sslmode=require"
+NEON_SSL_DISABLED=false
+PUBLIC_MODE=false
+# İsteğe bağlı olarak istemcinin kullanacağı doğrudan bir uç nokta tanımlayabilirsiniz
+# VITE_STUDENTS_API="https://<proje>.netlify.app/.netlify/functions/students-db"
+```
+
+`netlify dev` komutu ile fonksiyonları yerel olarak çalıştırırken bu değişkenler otomatik olarak okunacaktır.
 
 ## Başlangıç
 
 ```bash
 npm install
-npm run dev
+# Neon bağlantısını sağlayacak ortam değişkenlerini ayarladıktan sonra
+netlify dev
 ```
 
-`npm run dev` komutu uygulamayı geliştirme modunda çalıştırır. Tarayıcınızda [http://localhost:5173](http://localhost:5173) adresini açarak görüntüleyebilirsiniz.
+`netlify dev` komutu hem Vite geliştirme sunucusunu hem de Netlify Functions katmanını birlikte çalıştırır. Tarayıcınızda [http://localhost:8888](http://localhost:8888) adresini açarak uygulamayı görüntüleyebilirsiniz. Sadece Vite sunucusunu (`npm run dev`) çalıştırmak isterseniz API isteklerini yönlendirecek `VITE_STUDENTS_API` değişkenini sağlamanız gerekir.
+
+### Sorun Giderme
+
+- **"NEON_DATABASE_URL tanımlı değil" hatası**: Netlify fonksiyonu ortam değişkenini görmüyor demektir. Netlify CLI kullanırken `netlify env:set NEON_DATABASE_URL "postgresql://..."` komutu ile değeri girin ya da yerel `.env` dosyanızda aynı değişkeni tanımlayın. Uygulama artık bu durumla karşılaştığında arayüzde ayrıntılı bir uyarı mesajı gösterir.
 
 ## Üretim İçin Derleme
 
