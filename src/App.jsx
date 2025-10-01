@@ -56,6 +56,7 @@ function generateStudentId(classId, name, index) {
     .replace(/[^a-z0-9]+/gi, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 32);
+
   const suffix = index >= 0 ? `-${index + 1}` : '';
   return `${classId}-${normalizedName || 'ogrenci'}${suffix}`;
 }
@@ -65,16 +66,25 @@ function sanitizeStudentsData(rawStudents) {
     return { students: {}, idMap: {} };
   }
 
+  const studentsByClass = {};
+
   const sanitized = {};
   const idMap = {};
 
   Object.entries(rawStudents).forEach(([classId, studentList]) => {
     if (!Array.isArray(studentList)) {
+      studentsByClass[classId] = [];
+      return;
+    }
+
+    studentsByClass[classId] = studentList
+
       sanitized[classId] = [];
       return;
     }
 
     sanitized[classId] = studentList
+ 
       .map((student, index) => {
         let name = '';
         let originalId = '';
@@ -102,6 +112,7 @@ function sanitizeStudentsData(rawStudents) {
       .filter(Boolean);
   });
 
+  return { students: studentsByClass, idMap };
   return { students: sanitized, idMap };
 }
 
@@ -111,6 +122,13 @@ function sanitizeRecordsData(rawRecords, studentsData, idMap = {}) {
   }
 
   const validStudentIds = new Set();
+  Object.values(studentsData || {}).forEach((studentList = []) => {
+    studentList.forEach((student) => {
+      if (student && typeof student.id === 'string') {
+        validStudentIds.add(student.id);
+      }
+    });
+
   Object.values(studentsData).forEach((studentList) => {
     studentList.forEach((student) => validStudentIds.add(student.id));
   });
@@ -129,6 +147,28 @@ function sanitizeRecordsData(rawRecords, studentsData, idMap = {}) {
         sanitizedRecord[entryKey] = entryValue;
         return;
       }
+
+      const match = entryKey.match(/^(.*)-(\d+)$/);
+      if (!match) {
+        return;
+      }
+
+      const [, rawStudentId, lessonNumber] = match;
+      const trimmedId = rawStudentId.trim();
+
+      let studentId = null;
+      if (validStudentIds.has(rawStudentId)) {
+        studentId = rawStudentId;
+      } else if (validStudentIds.has(trimmedId)) {
+        studentId = trimmedId;
+      } else if (idMap[rawStudentId] && validStudentIds.has(idMap[rawStudentId])) {
+        studentId = idMap[rawStudentId];
+      } else if (idMap[trimmedId] && validStudentIds.has(idMap[trimmedId])) {
+        studentId = idMap[trimmedId];
+      }
+
+      if (!studentId) {
+        return;
 
       const lessonMatch = entryKey.match(/^(.*)-(\d+)$/);
       if (!lessonMatch) return;
@@ -197,6 +237,9 @@ function loadStoredData() {
 
   try {
     const data = JSON.parse(stored) || {};
+    const { students: sanitizedStudents, idMap } = sanitizeStudentsData(data.students || {});
+    const sanitizedRecords = sanitizeRecordsData(data.records || {}, sanitizedStudents, idMap);
+
     const { students: sanitizedStudents, idMap } = sanitizeStudentsData(data.students);
     const sanitizedRecords = sanitizeRecordsData(data.records, sanitizedStudents, idMap);
 
