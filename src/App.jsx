@@ -161,6 +161,11 @@ function AttendanceSystem() {
     }
   }, [savedRecords, scheduleLessonCount, selectedRecordKey]);
 
+  const currentClassStudents = useMemo(() => students[selectedClass] || [], [students, selectedClass]);
+
+  const manualLessonCountNumber = manualLessonCount === '' ? null : Number(manualLessonCount);
+
+  const effectiveLessonCount = useMemo(() => {
   const classStudents = useMemo(() => students[selectedClass] || [], [students, selectedClass]);
 
   const manualLessonCountNumber = manualLessonCount === '' ? null : Number(manualLessonCount);
@@ -176,6 +181,10 @@ function AttendanceSystem() {
 
     return storedLessonCount;
   }, [manualLessonCountNumber, scheduleLessonCount, storedLessonCount]);
+
+  const shouldShowManualLessonPrompt =
+    scheduleLessonCount === 0 && currentClassStudents.length > 0 && effectiveLessonCount === 0;
+  const areAttendanceActionsDisabled = effectiveLessonCount === 0 || currentClassStudents.length === 0;
 
   const shouldShowManualLessonPrompt = scheduleLessonCount === 0 && classStudents.length > 0 && lessonCount === 0;
   const areAttendanceActionsDisabled = lessonCount === 0 || classStudents.length === 0;
@@ -240,10 +249,14 @@ function AttendanceSystem() {
   const saveAttendance = () => {
     const key = `${selectedClass}-${selectedDate}`;
 
+    if (effectiveLessonCount === 0) {
     if (lessonCount === 0) {
       setMessage({ type: 'error', text: 'Bugün için ders sayısını girmeniz gerekiyor.' });
       return;
     }
+
+    const recordToSave = { ...attendance, __lessonCount: effectiveLessonCount };
+    const newRecords = { ...savedRecords, [key]: recordToSave };
 
     const recordToSave = { ...attendance, __lessonCount: lessonCount };
     const newRecords = { ...savedRecords, [key]: recordToSave };
@@ -292,6 +305,13 @@ function AttendanceSystem() {
     let csv = `Sınıf:,${className}\nTarih:,${selectedDate}\n\n`;
     csv +=
       'Öğrenci Adı,' +
+      Array.from({ length: effectiveLessonCount }, (_, i) => `${i + 1}. Ders`).join(',') +
+      '\n';
+
+    currentClassStudents.forEach((student) => {
+      const row = [student.name];
+      for (let i = 1; i <= effectiveLessonCount; i += 1) {
+
       Array.from({ length: lessonCount }, (_, i) => `${i + 1}. Ders`).join(',') +
       '\n';
 
@@ -505,12 +525,17 @@ function AttendanceSystem() {
         </div>
 
         <div className="bg-white rounded-3xl shadow-2xl border border-indigo-100 p-6">
+          {activeTab === 'yoklama' && selectedClass && currentClassStudents.length > 0 && effectiveLessonCount > 0 && (
+            <div className="space-y-6">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 p-5 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100">
+
           {activeTab === 'yoklama' && selectedClass && classStudents.length > 0 && lessonCount > 0 && (
             <div className="space-y-6">
               <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 p-5 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100">
 
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-5 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100">
  
+
                 <div className="flex items-center gap-3">
                   <div className="bg-indigo-600 text-white p-3 rounded-xl">
                     <Users className="w-6 h-6" />
@@ -518,6 +543,7 @@ function AttendanceSystem() {
                   <div>
                     <p className="text-sm text-gray-600">Sınıf Bilgileri</p>
                     <p className="text-xl font-bold text-gray-900">
+                      {currentClassStudents.length} öğrenci • {effectiveLessonCount} ders
                       {classStudents.length} öğrenci • {lessonCount} ders
                     </p>
                   </div>
@@ -569,6 +595,8 @@ function AttendanceSystem() {
                   <thead>
                     <tr className="bg-gradient-to-r from-gray-50 to-indigo-50">
                       <th className="p-4 text-left font-semibold text-gray-700 border-b-2 border-indigo-200">Öğrenci Adı</th>
+                      {Array.from({ length: effectiveLessonCount }, (_, i) => (
+
                       {Array.from({ length: lessonCount }, (_, i) => (
                         <th
                           key={i}
@@ -580,12 +608,16 @@ function AttendanceSystem() {
                     </tr>
                   </thead>
                   <tbody>
+                    {currentClassStudents.map((student, idx) => (
+
                     {classStudents.map((student, idx) => (
                       <tr
                         key={student.id}
                         className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-indigo-50 transition-colors`}
                       >
                         <td className="p-4 font-medium text-gray-900 border-b border-gray-200">{student.name}</td>
+                        {Array.from({ length: effectiveLessonCount }, (_, i) => {
+
                         {Array.from({ length: lessonCount }, (_, i) => {
                           const key = `${student.id}-${i + 1}`;
                           const currentStatus = attendance[key] || '';
@@ -621,6 +653,8 @@ function AttendanceSystem() {
             </div>
           )}
 
+          {activeTab === 'yoklama' && (!selectedClass || currentClassStudents.length === 0 || effectiveLessonCount === 0) && (
+
           {activeTab === 'yoklama' && (!selectedClass || classStudents.length === 0 || lessonCount === 0) && (
             <div className="text-center py-20">
               <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-100 rounded-full mb-6">
@@ -632,6 +666,7 @@ function AttendanceSystem() {
                   ? shouldShowManualLessonPrompt
                     ? 'Bu sınıf için bugüne ait ders sayısı tanımlı değil. Yukarıdaki alandan ders sayısını girerek yoklamayı başlatabilirsiniz.'
                     : 'Bu sınıf için seçilen tarihte ders bulunmuyor veya öğrenci listesi boş.'
+
 
                   ? 'Bu sınıf için seçilen tarihte ders bulunmuyor veya öğrenci listesi boş.'
                   : 'Öncelikle üst kısımdan sınıf ve tarih seçerek yoklamayı başlatabilirsiniz.'}
@@ -688,6 +723,8 @@ function AttendanceSystem() {
                 </div>
               </div>
 
+              {selectedClass && currentClassStudents.length > 0 && (
+
               {selectedClass && classStudents.length > 0 && (
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900 mb-6">Öğrenci Devamsızlık Raporu</h2>
@@ -705,6 +742,8 @@ function AttendanceSystem() {
                         </tr>
                       </thead>
                       <tbody>
+                        {currentClassStudents.map((student) => {
+
                         {classStudents.map((student) => {
                           const stats = calculateStudentStats(student.id, selectedClass);
                           const statusInfo = getStudentStatus(student.id, selectedClass);
@@ -748,6 +787,8 @@ function AttendanceSystem() {
                   </div>
                 </div>
               )}
+
+              {(!selectedClass || currentClassStudents.length === 0) && (
 
               {(!selectedClass || classStudents.length === 0) && (
                 <div className="text-center py-20">
@@ -795,6 +836,8 @@ function AttendanceSystem() {
                 </div>
               </div>
 
+              {currentClassStudents.length > 0 && (
+
               {classStudents.length > 0 && (
                 <div className="bg-white border-2 border-gray-200 rounded-2xl p-6">
                   <div className="flex items-center justify-between mb-4">
@@ -803,6 +846,12 @@ function AttendanceSystem() {
                       Kayıtlı Öğrenciler
                     </h3>
                     <span className="bg-indigo-100 text-indigo-800 px-4 py-1 rounded-full text-sm font-semibold">
+                      {currentClassStudents.length} öğrenci
+                    </span>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto space-y-2">
+                    {currentClassStudents.map((student, idx) => (
+
                       {classStudents.length} öğrenci
                     </span>
                   </div>
