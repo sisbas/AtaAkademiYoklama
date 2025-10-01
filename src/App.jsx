@@ -51,6 +51,25 @@ const absenceLimits = {
   senior: { excused: 20, unexcused: 20, total: 40 },
 };
 
+function extractLessonCount(record) {
+  if (!record) {
+    return 0;
+  }
+
+  if (typeof record.__lessonCount === 'number' && Number.isFinite(record.__lessonCount)) {
+    return record.__lessonCount;
+  }
+
+  return Object.keys(record).reduce((max, key) => {
+    if (key.startsWith('__')) {
+      return max;
+    }
+    const lessonNumber = Number(key.split('-').pop());
+    return Number.isFinite(lessonNumber) ? Math.max(max, lessonNumber) : max;
+  }, 0);
+}
+
+
 function getAbsenceLimit(classId) {
   if (classId.startsWith('12-') || classId.startsWith('mezun-')) {
     return absenceLimits.senior;
@@ -90,12 +109,92 @@ function AttendanceSystem() {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [activeTab, setActiveTab] = useState('yoklama');
   const [newStudentName, setNewStudentName] = useState('');
+  const [manualLessonCount, setManualLessonCount] = useState('');
+
 
   useEffect(() => {
     const data = loadStoredData();
     setStudents(data.students);
     setSavedRecords(data.records);
   }, []);
+
+  const scheduleLessonCount = useMemo(() => {
+    const cls = classes.find((c) => c.id === selectedClass);
+    if (!cls || !selectedDate) return 0;
+    const date = new Date(`${selectedDate}T00:00:00`);
+    return cls.schedule[dayNames[date.getDay()]] || 0;
+  }, [classes, selectedClass, selectedDate]);
+
+  const selectedRecordKey = selectedClass && selectedDate ? `${selectedClass}-${selectedDate}` : null;
+
+  const storedLessonCount = useMemo(() => {
+    if (!selectedRecordKey) {
+      return 0;
+    }
+    return extractLessonCount(savedRecords[selectedRecordKey]);
+  }, [selectedRecordKey, savedRecords]);
+
+  useEffect(() => {
+    if (!selectedRecordKey) {
+      setAttendance({});
+      setManualLessonCount('');
+      setMessage({ type: '', text: '' });
+      return;
+    }
+
+    const record = savedRecords[selectedRecordKey];
+    if (record) {
+      const { __lessonCount, ...rest } = record;
+      const sanitized = Object.fromEntries(Object.entries(rest).filter(([key]) => !key.startsWith('__')));
+      setAttendance(sanitized);
+      setMessage({ type: 'info', text: 'Bu tarih için kayıtlı yoklama yüklendi.' });
+      if (scheduleLessonCount === 0) {
+        const inferredCount = typeof __lessonCount === 'number' ? __lessonCount : extractLessonCount(rest);
+        setManualLessonCount(inferredCount > 0 ? String(inferredCount) : '');
+      } else {
+        setManualLessonCount('');
+      }
+    } else {
+      setAttendance({});
+      setMessage({ type: '', text: '' });
+      setManualLessonCount(scheduleLessonCount === 0 ? '' : '');
+    }
+  }, [savedRecords, scheduleLessonCount, selectedRecordKey]);
+
+  const classStudents = useMemo(() => students[selectedClass] || [], [students, selectedClass]);
+
+  const manualLessonCountNumber = manualLessonCount === '' ? null : Number(manualLessonCount);
+
+  const lessonCount = useMemo(() => {
+    if (scheduleLessonCount > 0) {
+      return scheduleLessonCount;
+    }
+
+    if (manualLessonCountNumber && manualLessonCountNumber > 0) {
+      return manualLessonCountNumber;
+    }
+
+    return storedLessonCount;
+  }, [manualLessonCountNumber, scheduleLessonCount, storedLessonCount]);
+
+  const shouldShowManualLessonPrompt = scheduleLessonCount === 0 && classStudents.length > 0 && lessonCount === 0;
+  const areAttendanceActionsDisabled = lessonCount === 0 || classStudents.length === 0;
+
+  const handleManualLessonCountChange = (event) => {
+    const { value } = event.target;
+    if (value === '') {
+      setManualLessonCount('');
+      return;
+    }
+
+    const numericValue = Number(value);
+    if (Number.isNaN(numericValue)) {
+      return;
+    }
+
+    const safeValue = Math.max(0, Math.floor(numericValue));
+    setManualLessonCount(safeValue > 0 ? String(safeValue) : '');
+  };
 
   useEffect(() => {
     if (selectedClass && selectedDate) {
@@ -142,6 +241,12 @@ function AttendanceSystem() {
     const key = `${selectedClass}-${selectedDate}`;
 
     if (lessonCount === 0) {
+      setMessage({ type: 'error', text: 'Bugün için ders sayısını girmeniz gerekiyor.' });
+      return;
+    }
+
+    const recordToSave = { ...attendance, __lessonCount: lessonCount };
+    const newRecords = { ...savedRecords, [key]: recordToSave };
       setMessage({ type: 'error', text: 'Bu sınıfın bu gün için ders programı yok!' });
       return;
     }
@@ -402,7 +507,10 @@ function AttendanceSystem() {
         <div className="bg-white rounded-3xl shadow-2xl border border-indigo-100 p-6">
           {activeTab === 'yoklama' && selectedClass && classStudents.length > 0 && lessonCount > 0 && (
             <div className="space-y-6">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 p-5 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100">
+
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-5 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100">
+ 
                 <div className="flex items-center gap-3">
                   <div className="bg-indigo-600 text-white p-3 rounded-xl">
                     <Users className="w-6 h-6" />
@@ -414,6 +522,27 @@ function AttendanceSystem() {
                     </p>
                   </div>
                 </div>
+                {scheduleLessonCount === 0 && selectedClass && (
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-white/60 border border-indigo-100 rounded-xl px-4 py-3">
+                    <label className="text-sm font-semibold text-gray-700" htmlFor="manual-lesson-count">
+                      Bugünkü ders sayısı
+                    </label>
+                    <input
+                      id="manual-lesson-count"
+                      type="number"
+                      min="1"
+                      value={manualLessonCount}
+                      onChange={handleManualLessonCountChange}
+                      placeholder="Ders sayısı"
+                      className="w-28 sm:w-24 rounded-lg border-2 border-indigo-100 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                    />
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={downloadCSV}
+                    disabled={areAttendanceActionsDisabled}
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-lg shadow-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 <div className="flex gap-2">
                   <button
                     onClick={downloadCSV}
@@ -424,6 +553,9 @@ function AttendanceSystem() {
                   </button>
                   <button
                     onClick={saveAttendance}
+                    disabled={areAttendanceActionsDisabled}
+                    className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-2 rounded-xl font-medium transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+
                     className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-2 rounded-xl font-medium transition-all shadow-lg shadow-indigo-200"
                     type="button"
                   >
@@ -497,6 +629,10 @@ function AttendanceSystem() {
               <h3 className="text-2xl font-bold text-gray-900 mb-3">Yoklama almak için seçim yapın</h3>
               <p className="text-gray-600 max-w-md mx-auto">
                 {selectedClass
+                  ? shouldShowManualLessonPrompt
+                    ? 'Bu sınıf için bugüne ait ders sayısı tanımlı değil. Yukarıdaki alandan ders sayısını girerek yoklamayı başlatabilirsiniz.'
+                    : 'Bu sınıf için seçilen tarihte ders bulunmuyor veya öğrenci listesi boş.'
+
                   ? 'Bu sınıf için seçilen tarihte ders bulunmuyor veya öğrenci listesi boş.'
                   : 'Öncelikle üst kısımdan sınıf ve tarih seçerek yoklamayı başlatabilirsiniz.'}
               </p>
