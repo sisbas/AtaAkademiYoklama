@@ -70,6 +70,12 @@ function sanitizeStudentsData(rawStudents) {
   const sanitized = {};
   const idMap = {};
 
+    return {};
+  }
+
+  const sanitized = {};
+
+
   Object.entries(rawStudents).forEach(([classId, studentList]) => {
     if (!Array.isArray(studentList)) {
       sanitized[classId] = [];
@@ -105,6 +111,28 @@ function sanitizeStudentsData(rawStudents) {
         }
 
         return { id: finalId, name };
+        if (student && typeof student === 'object') {
+          const name = typeof student.name === 'string' ? student.name.trim() : '';
+          if (!name) {
+            return null;
+          }
+
+          const id = typeof student.id === 'string' && student.id.trim()
+            ? student.id.trim()
+            : generateStudentId(classId, name, index);
+
+          return { id, name };
+        }
+
+        if (typeof student === 'string') {
+          const name = student.trim();
+          if (!name) {
+            return null;
+          }
+          return { id: generateStudentId(classId, name, index), name };
+        }
+
+        return null;
       })
       .filter(Boolean);
   });
@@ -113,6 +141,11 @@ function sanitizeStudentsData(rawStudents) {
 }
 
 function sanitizeRecordsData(rawRecords, studentsData, idMap) {
+
+  return sanitized;
+}
+
+function sanitizeRecordsData(rawRecords, studentsData) {
   if (!rawRecords || typeof rawRecords !== 'object' || Array.isArray(rawRecords)) {
     return {};
   }
@@ -160,6 +193,14 @@ function sanitizeRecordsData(rawRecords, studentsData, idMap) {
 
       if (typeof entryValue === 'string' && statusMap[entryValue]) {
         sanitizedRecord[`${studentId}-${lessonNumber}`] = entryValue;
+
+      const [studentId] = entryKey.split('-');
+      if (!validStudentIds.has(studentId)) {
+        return;
+      }
+
+      if (typeof entryValue === 'string' && statusMap[entryValue]) {
+        sanitizedRecord[entryKey] = entryValue;
       }
     });
 
@@ -210,6 +251,9 @@ function loadStoredData() {
     const data = JSON.parse(stored) || {};
     const { students: sanitizedStudents, idMap } = sanitizeStudentsData(data.students);
     const sanitizedRecords = sanitizeRecordsData(data.records, sanitizedStudents, idMap);
+
+    const sanitizedStudents = sanitizeStudentsData(data.students);
+    const sanitizedRecords = sanitizeRecordsData(data.records, sanitizedStudents);
 
     const shouldRewriteStorage =
       JSON.stringify(data.students || {}) !== JSON.stringify(sanitizedStudents) ||
