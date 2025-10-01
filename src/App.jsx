@@ -64,10 +64,17 @@ function generateStudentId(classId, name, index) {
 
 function sanitizeStudentsData(rawStudents) {
   if (!rawStudents || typeof rawStudents !== 'object' || Array.isArray(rawStudents)) {
+    return { students: {}, idMap: {} };
+  }
+
+  const sanitized = {};
+  const idMap = {};
+
     return {};
   }
 
   const sanitized = {};
+
 
   Object.entries(rawStudents).forEach(([classId, studentList]) => {
     if (!Array.isArray(studentList)) {
@@ -77,6 +84,33 @@ function sanitizeStudentsData(rawStudents) {
 
     sanitized[classId] = studentList
       .map((student, index) => {
+        let name = '';
+        let originalId = '';
+
+        if (student && typeof student === 'object') {
+          name = typeof student.name === 'string' ? student.name.trim() : '';
+          const rawId = typeof student.id === 'string' ? student.id : '';
+          originalId = rawId.trim();
+
+          if (rawId && rawId !== originalId) {
+            idMap[rawId] = originalId;
+          }
+        } else if (typeof student === 'string') {
+          name = student.trim();
+        }
+
+        if (!name) {
+          return null;
+        }
+
+        const generatedId = generateStudentId(classId, name, index);
+        const finalId = originalId || generatedId;
+
+        if (originalId && originalId !== finalId) {
+          idMap[originalId] = finalId;
+        }
+
+        return { id: finalId, name };
         if (student && typeof student === 'object') {
           const name = typeof student.name === 'string' ? student.name.trim() : '';
           if (!name) {
@@ -102,6 +136,11 @@ function sanitizeStudentsData(rawStudents) {
       })
       .filter(Boolean);
   });
+
+  return { students: sanitized, idMap };
+}
+
+function sanitizeRecordsData(rawRecords, studentsData, idMap) {
 
   return sanitized;
 }
@@ -130,6 +169,30 @@ function sanitizeRecordsData(rawRecords, studentsData) {
         sanitizedRecord[entryKey] = entryValue;
         return;
       }
+
+      const lessonMatch = entryKey.match(/^(.*)-(\d+)$/);
+      if (!lessonMatch) {
+        return;
+      }
+
+      const [, rawStudentId, lessonNumber] = lessonMatch;
+      let studentId = rawStudentId;
+
+      if (!validStudentIds.has(studentId)) {
+        const trimmedId = rawStudentId.trim();
+        if (trimmedId && validStudentIds.has(trimmedId)) {
+          studentId = trimmedId;
+        } else {
+          const mappedId = idMap[rawStudentId] || idMap[trimmedId];
+          if (!mappedId || !validStudentIds.has(mappedId)) {
+            return;
+          }
+          studentId = mappedId;
+        }
+      }
+
+      if (typeof entryValue === 'string' && statusMap[entryValue]) {
+        sanitizedRecord[`${studentId}-${lessonNumber}`] = entryValue;
 
       const [studentId] = entryKey.split('-');
       if (!validStudentIds.has(studentId)) {
@@ -186,6 +249,9 @@ function loadStoredData() {
 
   try {
     const data = JSON.parse(stored) || {};
+    const { students: sanitizedStudents, idMap } = sanitizeStudentsData(data.students);
+    const sanitizedRecords = sanitizeRecordsData(data.records, sanitizedStudents, idMap);
+
     const sanitizedStudents = sanitizeStudentsData(data.students);
     const sanitizedRecords = sanitizeRecordsData(data.records, sanitizedStudents);
 
