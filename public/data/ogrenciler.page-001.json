@@ -1,0 +1,21 @@
+[
+  {
+    "ad": "Ayşe",
+    "soyad": "Yılmaz",
+    "sinif": "9",
+    "sube": "A",
+    "iletisim": [
+      { "alan": "ogrenci_email", "deger": "ayse.yilmaz@example.com" },
+      { "alan": "veli_tel", "deger": "+90 555 111 2233" }
+    ]
+  },
+  {
+    "ad": "Berk",
+    "soyad": "Demir",
+    "sinif": "9",
+    "sube": "B",
+    "iletisim": [
+      { "alan": "ogrenci_email", "deger": "berk.demir@example.com" }
+    ]
+  }
+]

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ata-akademi.example/schema/ogrenciler.schema.json",
+  "title": "OgrenciKaydi",
+  "type": "object",
+  "required": ["ad", "soyad"],
+  "properties": {
+    "ad": { "type": "string" },
+    "soyad": { "type": "string" },
+    "sinif": { "type": "string" },
+    "sube": { "type": "string" },
+    "iletisim": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["alan", "deger"],
+        "properties": {
+          "alan": { "type": "string" },
+          "deger": { "type": "string" }
+        }
+      }
+    },
+    "_meta": {
+      "type": "object",
+      "properties": {
+        "ver": { "type": "string" },
+        "kaynak": { "type": "string" },
+        "son_guncelleme": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
