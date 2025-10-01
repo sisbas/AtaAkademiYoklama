@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Check, X, AlertCircle, Calendar, Users, Save, Download, Trash2 } from 'lucide-react';
+import {
+  Check,
+  X,
+  AlertCircle,
+  Calendar,
+  Users,
+  Save,
+  Download,
+  Trash2,
+  AlertTriangle,
+} from 'lucide-react';
 
 const AttendanceSystem = () => {
   const [classes] = useState([
@@ -21,7 +31,7 @@ const AttendanceSystem = () => {
     { id: 'mezun-ea-3', name: 'Mezun Ea 3', schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 } },
     { id: 'mezun-say-1', name: 'Mezun Say 1', schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 } },
     { id: 'mezun-say-2', name: 'Mezun Say 2', schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 } },
-    { id: 'mezun-say-3', name: 'Mezun Say 3', schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 } }
+    { id: 'mezun-say-3', name: 'Mezun Say 3', schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 } },
   ]);
 
   const [students, setStudents] = useState({});
@@ -32,13 +42,45 @@ const AttendanceSystem = () => {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [activeTab, setActiveTab] = useState('yoklama');
   const [newStudentName, setNewStudentName] = useState('');
+  const [storageAvailable, setStorageAvailable] = useState(true);
+
+  // 🔒 Güvenli localStorage kontrolü
+  const isLocalStorageAvailable = () => {
+    try {
+      const test = '__storage_test__';
+      localStorage.setItem(test, test);
+      localStorage.removeItem(test);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
 
   useEffect(() => {
+    const hasStorage = isLocalStorageAvailable();
+    setStorageAvailable(hasStorage);
+
+    if (!hasStorage) {
+      setMessage({
+        type: 'warning',
+        text: 'Tarayıcınızda veri saklama desteklenmiyor. Veriler geçici.',
+      });
+      return;
+    }
+
     const stored = localStorage.getItem('ata-akademi-data');
     if (stored) {
-      const data = JSON.parse(stored);
-      setStudents(data.students || {});
-      setSavedRecords(data.records || {});
+      try {
+        const data = JSON.parse(stored);
+        setStudents(data.students || {});
+        setSavedRecords(data.records || {});
+      } catch (e) {
+        console.error('Veri okuma hatası:', e);
+        setMessage({
+          type: 'error',
+          text: 'Veri yüklenirken hata oluştu. Yeni başlangıç yapılıyor.',
+        });
+      }
     }
   }, []);
 
@@ -57,14 +99,24 @@ const AttendanceSystem = () => {
   }, [selectedClass, selectedDate, savedRecords]);
 
   const saveToStorage = (studentsData, recordsData) => {
-    localStorage.setItem('ata-akademi-data', JSON.stringify({
-      students: studentsData,
-      records: recordsData
-    }));
+    if (!storageAvailable) return;
+
+    try {
+      localStorage.setItem(
+        'ata-akademi-data',
+        JSON.stringify({
+          students: studentsData,
+          records: recordsData,
+        })
+      );
+    } catch (e) {
+      console.error('Kayıt hatası:', e);
+      setMessage({ type: 'error', text: 'Veri kaydedilemedi!' });
+    }
   };
 
   const getLessonCount = () => {
-    const cls = classes.find(c => c.id === selectedClass);
+    const cls = classes.find((c) => c.id === selectedClass);
     if (!cls) return 0;
     const date = new Date(selectedDate + 'T00:00:00');
     const dayNames = ['pazar', 'pazartesi', 'salı', 'çarşamba', 'perşembe', 'cuma', 'cumartesi'];
@@ -72,16 +124,16 @@ const AttendanceSystem = () => {
   };
 
   const handleAttendanceChange = (studentId, lessonNumber, status) => {
-    setAttendance(prev => ({
+    setAttendance((prev) => ({
       ...prev,
-      [`${studentId}-${lessonNumber}`]: status
+      [`${studentId}-${lessonNumber}`]: status,
     }));
   };
 
   const saveAttendance = () => {
     const key = `${selectedClass}-${selectedDate}`;
     const lessonCount = getLessonCount();
-    
+
     if (lessonCount === 0) {
       setMessage({ type: 'error', text: 'Bu sınıfın bu gün için ders programı yok!' });
       return;
@@ -99,7 +151,7 @@ const AttendanceSystem = () => {
     if (!newStudents[selectedClass]) newStudents[selectedClass] = [];
     newStudents[selectedClass].push({
       id: `${selectedClass}-${Date.now()}`,
-      name: newStudentName.trim()
+      name: newStudentName.trim(),
     });
     setStudents(newStudents);
     saveToStorage(newStudents, savedRecords);
@@ -108,9 +160,9 @@ const AttendanceSystem = () => {
   };
 
   const removeStudent = (studentId) => {
-    if (!confirm('Bu öğrenciyi silmek istediğinizden emin misiniz?')) return;
+    if (!window.confirm('Bu öğrenciyi silmek istediğinizden emin misiniz?')) return;
     const newStudents = { ...students };
-    newStudents[selectedClass] = newStudents[selectedClass].filter(s => s.id !== studentId);
+    newStudents[selectedClass] = newStudents[selectedClass].filter((s) => s.id !== studentId);
     setStudents(newStudents);
     saveToStorage(newStudents, savedRecords);
     setMessage({ type: 'success', text: 'Öğrenci silindi!' });
@@ -118,13 +170,13 @@ const AttendanceSystem = () => {
 
   const downloadCSV = () => {
     const classStudents = students[selectedClass] || [];
-    const className = classes.find(c => c.id === selectedClass)?.name || selectedClass;
+    const className = classes.find((c) => c.id === selectedClass)?.name || selectedClass;
     const lessonCount = getLessonCount();
-    
+
     let csv = `Sınıf:,${className}\nTarih:,${selectedDate}\n\n`;
     csv += 'Öğrenci Adı,' + Array.from({ length: lessonCount }, (_, i) => `${i + 1}. Ders`).join(',') + '\n';
-    
-    classStudents.forEach(student => {
+
+    classStudents.forEach((student) => {
       const row = [student.name];
       for (let i = 1; i <= lessonCount; i++) {
         row.push(attendance[`${student.id}-${i}`] || '-');
@@ -147,12 +199,16 @@ const AttendanceSystem = () => {
   };
 
   const calculateStudentStats = (studentId, classId) => {
-    let totalLessons = 0, attended = 0, absent = 0, excused = 0, onLeave = 0;
+    let totalLessons = 0,
+      attended = 0,
+      absent = 0,
+      excused = 0,
+      onLeave = 0;
 
-    Object.keys(savedRecords).forEach(recordKey => {
+    Object.keys(savedRecords).forEach((recordKey) => {
       if (recordKey.startsWith(classId)) {
         const record = savedRecords[recordKey];
-        Object.keys(record).forEach(key => {
+        Object.keys(record).forEach((key) => {
           if (key.startsWith(studentId)) {
             totalLessons++;
             const status = record[key];
@@ -173,8 +229,9 @@ const AttendanceSystem = () => {
     const classStudents = students[classId] || [];
     if (classStudents.length === 0) return null;
 
-    let totalAttendance = 0, studentCount = 0;
-    classStudents.forEach(student => {
+    let totalAttendance = 0,
+      studentCount = 0;
+    classStudents.forEach((student) => {
       const stats = calculateStudentStats(student.id, classId);
       if (stats.totalLessons > 0) {
         totalAttendance += stats.attendanceRate;
@@ -190,30 +247,34 @@ const AttendanceSystem = () => {
     const totalAbsences = stats.absent + stats.excused;
 
     if (stats.absent >= limits.unexcused || stats.excused >= limits.excused || totalAbsences >= limits.total) {
-      return { status: 'critical', color: 'bg-red-100 border-red-500', textColor: 'text-red-800' };
+      return { status: 'critical', color: 'bg-red-100 border-l-4 border-red-500', textColor: 'text-red-800' };
     }
-    if (stats.absent >= limits.unexcused * 0.8 || stats.excused >= limits.excused * 0.8 || totalAbsences >= limits.total * 0.8) {
-      return { status: 'warning', color: 'bg-yellow-100 border-yellow-500', textColor: 'text-yellow-800' };
+    if (
+      stats.absent >= limits.unexcused * 0.8 ||
+      stats.excused >= limits.excused * 0.8 ||
+      totalAbsences >= limits.total * 0.8
+    ) {
+      return { status: 'warning', color: 'bg-yellow-100 border-l-4 border-yellow-500', textColor: 'text-yellow-800' };
     }
-    return { status: 'normal', color: 'bg-green-50 border-green-200', textColor: 'text-green-800' };
+    return { status: 'normal', color: 'bg-green-50 border-l-4 border-green-500', textColor: 'text-green-800' };
   };
 
   const getStatusColor = (status) => {
     const colors = {
-      'geldi': 'bg-green-500 hover:bg-green-600',
-      'gelmedi': 'bg-red-500 hover:bg-red-600',
-      'mazeretli': 'bg-yellow-500 hover:bg-yellow-600',
-      'izinli': 'bg-blue-500 hover:bg-blue-600'
+      geldi: 'bg-green-500 hover:bg-green-600 text-white',
+      gelmedi: 'bg-red-500 hover:bg-red-600 text-white',
+      mazeretli: 'bg-yellow-500 hover:bg-yellow-600 text-white',
+      izinli: 'bg-blue-500 hover:bg-blue-600 text-white',
     };
-    return colors[status] || 'bg-gray-300 hover:bg-gray-400';
+    return colors[status] || 'bg-gray-300 hover:bg-gray-400 text-gray-700';
   };
 
   const getStatusIcon = (status) => {
     const icons = {
-      'geldi': <Check className="w-4 h-4" />,
-      'gelmedi': <X className="w-4 h-4" />,
-      'mazeretli': <AlertCircle className="w-4 h-4" />,
-      'izinli': <Calendar className="w-4 h-4" />
+      geldi: <Check className="w-4 h-4" />,
+      gelmedi: <X className="w-4 h-4" />,
+      mazeretli: <AlertCircle className="w-4 h-4" />,
+      izinli: <Calendar className="w-4 h-4" />,
     };
     return icons[status] || null;
   };
@@ -230,29 +291,45 @@ const AttendanceSystem = () => {
             <h1 className="text-3xl font-bold text-gray-800">Ata Akademi Yoklama Sistemi</h1>
           </div>
 
+          {storageAvailable === false && (
+            <div className="mb-4 p-3 bg-yellow-100 text-yellow-800 rounded-lg flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" />
+              <span>Tarayıcınızda veri kalıcı olarak saklanamaz. Sayfa yenilenirse veriler kaybolur.</span>
+            </div>
+          )}
+
           <div className="flex gap-4 mb-6 border-b">
-            {['yoklama', 'raporlar', 'yukle'].map(tab => (
+            {[
+              { id: 'yoklama', label: 'Yoklama Gir' },
+              { id: 'raporlar', label: 'Raporlar' },
+              { id: 'yukle', label: 'Öğrenci Yönetimi' },
+            ].map((tab) => (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
                 className={`px-4 py-2 font-medium transition-colors ${
-                  activeTab === tab
+                  activeTab === tab.id
                     ? 'text-indigo-600 border-b-2 border-indigo-600'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                {tab === 'yoklama' ? 'Yoklama Gir' : tab === 'raporlar' ? 'Raporlar' : 'Öğrenci Yönetimi'}
+                {tab.label}
               </button>
             ))}
           </div>
 
           {message.text && (
-            <div className={`p-4 rounded-lg mb-4 ${
-              message.type === 'success' ? 'bg-green-100 text-green-800' :
-              message.type === 'error' ? 'bg-red-100 text-red-800' :
-              message.type === 'warning' ? 'bg-yellow-100 text-yellow-800' :
-              'bg-blue-100 text-blue-800'
-            }`}>
+            <div
+              className={`p-4 rounded-lg mb-4 ${
+                message.type === 'success'
+                  ? 'bg-green-100 text-green-800'
+                  : message.type === 'error'
+                  ? 'bg-red-100 text-red-800'
+                  : message.type === 'warning'
+                  ? 'bg-yellow-100 text-yellow-800'
+                  : 'bg-blue-100 text-blue-800'
+              }`}
+            >
               {message.text}
             </div>
           )}
@@ -266,7 +343,11 @@ const AttendanceSystem = () => {
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">Sınıf seçiniz...</option>
-                {classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
+                {classes.map((cls) => (
+                  <option key={cls.id} value={cls.id}>
+                    {cls.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -286,7 +367,10 @@ const AttendanceSystem = () => {
                 <p className="text-sm font-medium text-indigo-800">
                   {classStudents.length} öğrenci • {lessonCount} ders
                 </p>
-                <button onClick={downloadCSV} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">
+                <button
+                  onClick={downloadCSV}
+                  className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm"
+                >
                   <Download className="w-4 h-4" /> CSV İndir
                 </button>
               </div>
@@ -297,12 +381,14 @@ const AttendanceSystem = () => {
                     <tr className="bg-gray-50">
                       <th className="p-3 text-left font-semibold text-gray-700 border">Öğrenci Adı</th>
                       {Array.from({ length: lessonCount }, (_, i) => (
-                        <th key={i} className="p-3 text-center font-semibold text-gray-700 border">{i + 1}. Ders</th>
+                        <th key={i} className="p-3 text-center font-semibold text-gray-700 border">
+                          {i + 1}. Ders
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {classStudents.map(student => (
+                    {classStudents.map((student) => (
                       <tr key={student.id} className="hover:bg-gray-50">
                         <td className="p-3 font-medium text-gray-800 border">{student.name}</td>
                         {Array.from({ length: lessonCount }, (_, i) => {
@@ -311,14 +397,12 @@ const AttendanceSystem = () => {
                           return (
                             <td key={i} className="p-2 border">
                               <div className="flex gap-1 justify-center">
-                                {['geldi', 'gelmedi', 'mazeretli', 'izinli'].map(status => (
+                                {['geldi', 'gelmedi', 'mazeretli', 'izinli'].map((status) => (
                                   <button
                                     key={status}
                                     onClick={() => handleAttendanceChange(student.id, i + 1, status)}
                                     className={`p-2 rounded transition-all ${
-                                      currentStatus === status
-                                        ? getStatusColor(status) + ' text-white'
-                                        : 'bg-gray-100 text-gray-400'
+                                      currentStatus === status ? getStatusColor(status) : 'bg-gray-100 text-gray-400'
                                     }`}
                                   >
                                     {getStatusIcon(status)}
@@ -343,6 +427,21 @@ const AttendanceSystem = () => {
             </div>
           )}
 
+          {activeTab === 'yoklama' &&
+            (!selectedClass || classStudents.length === 0 || lessonCount === 0) && (
+              <div className="text-center py-12 text-gray-600">
+                {selectedClass ? (
+                  lessonCount === 0 ? (
+                    <p>Bu sınıfın seçilen tarihte ders programı tanımlı değil.</p>
+                  ) : (
+                    <p>Bu sınıfa henüz öğrenci eklenmemiş.</p>
+                  )
+                ) : (
+                  <p>Önce bir sınıf seçin.</p>
+                )}
+              </div>
+            )}
+
           {activeTab === 'raporlar' && (
             <div>
               <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
@@ -351,7 +450,7 @@ const AttendanceSystem = () => {
 
               <h2 className="text-xl font-bold mb-4">Sınıf Devamlılık İstatistikleri</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                {classes.map(cls => {
+                {classes.map((cls) => {
                   const stats = calculateClassStats(cls.id);
                   if (stats === null) return null;
                   return (
@@ -359,7 +458,10 @@ const AttendanceSystem = () => {
                       <h3 className="font-semibold text-gray-700 mb-2">{cls.name}</h3>
                       <div className="text-2xl font-bold text-indigo-600">{stats.toFixed(1)}%</div>
                       <div className="mt-2 bg-gray-200 rounded-full h-2">
-                        <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${Math.min(stats, 100)}%` }} />
+                        <div
+                          className="bg-indigo-600 h-full rounded-full"
+                          style={{ width: `${Math.min(stats, 100)}%` }}
+                        />
                       </div>
                     </div>
                   );
@@ -383,20 +485,24 @@ const AttendanceSystem = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {classStudents.map(student => {
+                        {classStudents.map((student) => {
                           const stats = calculateStudentStats(student.id, selectedClass);
                           const statusInfo = getStudentStatus(student.id, selectedClass);
                           const limits = getAbsenceLimit(selectedClass);
                           return (
-                            <tr key={student.id} className={`border-l-4 ${statusInfo.color}`}>
+                            <tr key={student.id} className={statusInfo.color}>
                               <td className="p-2 border">{student.name}</td>
                               <td className="p-2 text-center border">{stats.totalLessons}</td>
                               <td className="p-2 text-center border text-green-600">{stats.attended}</td>
-                              <td className="p-2 text-center border text-red-600">{stats.absent}/{limits.unexcused}</td>
-                              <td className="p-2 text-center border text-yellow-600">{stats.excused}/{limits.excused}</td>
+                              <td className="p-2 text-center border text-red-600">
+                                {stats.absent}/{limits.unexcused}
+                              </td>
+                              <td className="p-2 text-center border text-yellow-600">
+                                {stats.excused}/{limits.excused}
+                              </td>
                               <td className="p-2 text-center border font-bold">{stats.attendanceRate.toFixed(1)}%</td>
                               <td className={`p-2 text-center border ${statusInfo.textColor}`}>
-                                {statusInfo.status === 'critical' ? '🔴' : statusInfo.status === 'warning' ? '⚠️' : '✅'}
+                                {statusInfo.status === 'critical' ? '🔴 Kritik' : statusInfo.status === 'warning' ? '⚠️ Uyarı' : '✅ İyi'}
                               </td>
                             </tr>
                           );
@@ -417,7 +523,7 @@ const AttendanceSystem = () => {
                   value={newStudentName}
                   onChange={(e) => setNewStudentName(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && addStudent()}
-                  placeholder="Öğrenci adı..."
+                  placeholder={selectedClass ? 'Öğrenci adı...' : 'Önce sınıf seçin'}
                   disabled={!selectedClass}
                   className="flex-1 p-3 border rounded-lg"
                 />
@@ -435,7 +541,9 @@ const AttendanceSystem = () => {
                   <p className="font-medium mb-2">Kayıtlı Öğrenciler ({classStudents.length}):</p>
                   {classStudents.map((student, idx) => (
                     <div key={student.id} className="flex justify-between items-center bg-white p-2 rounded mb-1">
-                      <span className="text-sm">{idx + 1}. {student.name}</span>
+                      <span className="text-sm">
+                        {idx + 1}. {student.name}
+                      </span>
                       <button onClick={() => removeStudent(student.id)} className="text-red-600">
                         <Trash2 className="w-4 h-4" />
                       </button>
