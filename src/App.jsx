@@ -36,7 +36,6 @@ const CLASS_DEFINITIONS = [
 ];
 
 const STORAGE_KEY = 'ata-akademi-data';
-
 const dayNames = ['pazar', 'pazartesi', 'salı', 'çarşamba', 'perşembe', 'cuma', 'cumartesi'];
 
 const statusMap = {
@@ -57,17 +56,17 @@ function generateStudentId(classId, name, index) {
     .replace(/[^a-z0-9]+/gi, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 32);
-
   const suffix = index >= 0 ? `-${index + 1}` : '';
   return `${classId}-${normalizedName || 'ogrenci'}${suffix}`;
 }
 
 function sanitizeStudentsData(rawStudents) {
   if (!rawStudents || typeof rawStudents !== 'object' || Array.isArray(rawStudents)) {
-    return {};
+    return { students: {}, idMap: {} };
   }
 
   const sanitized = {};
+  const idMap = {};
 
   Object.entries(rawStudents).forEach(([classId, studentList]) => {
     if (!Array.isArray(studentList)) {
@@ -77,36 +76,36 @@ function sanitizeStudentsData(rawStudents) {
 
     sanitized[classId] = studentList
       .map((student, index) => {
+        let name = '';
+        let originalId = '';
+
         if (student && typeof student === 'object') {
-          const name = typeof student.name === 'string' ? student.name.trim() : '';
-          if (!name) {
-            return null;
-          }
-
-          const id = typeof student.id === 'string' && student.id.trim()
-            ? student.id.trim()
-            : generateStudentId(classId, name, index);
-
-          return { id, name };
+          name = typeof student.name === 'string' ? student.name.trim() : '';
+          originalId = typeof student.id === 'string' ? student.id.trim() : '';
+        } else if (typeof student === 'string') {
+          name = student.trim();
         }
 
-        if (typeof student === 'string') {
-          const name = student.trim();
-          if (!name) {
-            return null;
-          }
-          return { id: generateStudentId(classId, name, index), name };
+        if (!name) {
+          return null;
         }
 
-        return null;
+        const generatedId = generateStudentId(classId, name, index);
+        const finalId = originalId || generatedId;
+
+        if (originalId && originalId !== finalId) {
+          idMap[originalId] = finalId;
+        }
+
+        return { id: finalId, name };
       })
       .filter(Boolean);
   });
 
-  return sanitized;
+  return { students: sanitized, idMap };
 }
 
-function sanitizeRecordsData(rawRecords, studentsData) {
+function sanitizeRecordsData(rawRecords, studentsData, idMap = {}) {
   if (!rawRecords || typeof rawRecords !== 'object' || Array.isArray(rawRecords)) {
     return {};
   }
@@ -131,13 +130,27 @@ function sanitizeRecordsData(rawRecords, studentsData) {
         return;
       }
 
-      const [studentId] = entryKey.split('-');
+      const lessonMatch = entryKey.match(/^(.*)-(\d+)$/);
+      if (!lessonMatch) return;
+
+      const [, rawStudentId, lessonNumber] = lessonMatch;
+      let studentId = rawStudentId;
+
       if (!validStudentIds.has(studentId)) {
-        return;
+        const trimmedId = rawStudentId.trim();
+        if (trimmedId && validStudentIds.has(trimmedId)) {
+          studentId = trimmedId;
+        } else {
+          const mappedId = idMap[rawStudentId] || idMap[trimmedId];
+          if (!mappedId || !validStudentIds.has(mappedId)) {
+            return;
+          }
+          studentId = mappedId;
+        }
       }
 
       if (typeof entryValue === 'string' && statusMap[entryValue]) {
-        sanitizedRecord[entryKey] = entryValue;
+        sanitizedRecord[`${studentId}-${lessonNumber}`] = entryValue;
       }
     });
 
@@ -153,11 +166,9 @@ function extractLessonCount(record) {
   if (!record) {
     return 0;
   }
-
   if (typeof record.__lessonCount === 'number' && Number.isFinite(record.__lessonCount)) {
     return record.__lessonCount;
   }
-
   return Object.keys(record).reduce((max, key) => {
     if (key.startsWith('__')) {
       return max;
@@ -186,8 +197,8 @@ function loadStoredData() {
 
   try {
     const data = JSON.parse(stored) || {};
-    const sanitizedStudents = sanitizeStudentsData(data.students);
-    const sanitizedRecords = sanitizeRecordsData(data.records, sanitizedStudents);
+    const { students: sanitizedStudents, idMap } = sanitizeStudentsData(data.students);
+    const sanitizedRecords = sanitizeRecordsData(data.records, sanitizedStudents, idMap);
 
     const shouldRewriteStorage =
       JSON.stringify(data.students || {}) !== JSON.stringify(sanitizedStudents) ||
@@ -262,6 +273,7 @@ function AttendanceSystem() {
       const sanitized = Object.fromEntries(Object.entries(rest).filter(([key]) => !key.startsWith('__')));
       setAttendance(sanitized);
       setMessage({ type: 'info', text: 'Bu tarih için kayıtlı yoklama yüklendi.' });
+
       if (scheduleLessonCount === 0) {
         const inferredCount = typeof __lessonCount === 'number' ? __lessonCount : extractLessonCount(rest);
         setManualLessonCount(inferredCount > 0 ? String(inferredCount) : '');
@@ -283,16 +295,15 @@ function AttendanceSystem() {
     if (scheduleLessonCount > 0) {
       return scheduleLessonCount;
     }
-
     if (manualLessonCountNumber && manualLessonCountNumber > 0) {
       return manualLessonCountNumber;
     }
-
     return storedLessonCount;
   }, [manualLessonCountNumber, scheduleLessonCount, storedLessonCount]);
 
   const shouldShowManualLessonPrompt =
     scheduleLessonCount === 0 && currentClassStudents.length > 0 && effectiveLessonCount === 0;
+
   const areAttendanceActionsDisabled = effectiveLessonCount === 0 || currentClassStudents.length === 0;
 
   const handleManualLessonCountChange = (event) => {
@@ -301,12 +312,10 @@ function AttendanceSystem() {
       setManualLessonCount('');
       return;
     }
-
     const numericValue = Number(value);
     if (Number.isNaN(numericValue)) {
       return;
     }
-
     const safeValue = Math.max(0, Math.floor(numericValue));
     setManualLessonCount(safeValue > 0 ? String(safeValue) : '');
   };
@@ -331,15 +340,12 @@ function AttendanceSystem() {
 
   const saveAttendance = () => {
     const key = `${selectedClass}-${selectedDate}`;
-
     if (effectiveLessonCount === 0) {
       setMessage({ type: 'error', text: 'Bugün için ders sayısını girmeniz gerekiyor.' });
       return;
     }
-
     const recordToSave = { ...attendance, __lessonCount: effectiveLessonCount };
     const newRecords = { ...savedRecords, [key]: recordToSave };
-
     setSavedRecords(newRecords);
     saveToStorage(students, newRecords);
     setMessage({ type: 'success', text: 'Yoklama başarıyla kaydedildi!' });
@@ -347,7 +353,6 @@ function AttendanceSystem() {
 
   const addStudent = () => {
     if (!newStudentName.trim() || !selectedClass) return;
-
     const newStudents = { ...students };
     if (!newStudents[selectedClass]) newStudents[selectedClass] = [];
     newStudents[selectedClass] = [
@@ -357,7 +362,6 @@ function AttendanceSystem() {
         name: newStudentName.trim(),
       },
     ];
-
     setStudents(newStudents);
     saveToStorage(newStudents, savedRecords);
     setNewStudentName('');
@@ -366,7 +370,6 @@ function AttendanceSystem() {
 
   const removeStudent = (studentId) => {
     if (typeof window !== 'undefined' && !window.confirm('Bu öğrenciyi silmek istediğinizden emin misiniz?')) return;
-
     const newStudents = { ...students };
     newStudents[selectedClass] = newStudents[selectedClass].filter((s) => s.id !== studentId);
     setStudents(newStudents);
@@ -376,8 +379,7 @@ function AttendanceSystem() {
 
   const downloadCSV = () => {
     const className = classes.find((c) => c.id === selectedClass)?.name || selectedClass;
-
-    let csv = `Sınıf:,${className}\nTarih:,${selectedDate}\n\n`;
+    let csv = `Sınıf:,${className}\nTarih:,${selectedDate}\n`;
     csv +=
       'Öğrenci Adı,' +
       Array.from({ length: effectiveLessonCount }, (_, i) => `${i + 1}. Ders`).join(',') +
@@ -439,7 +441,6 @@ function AttendanceSystem() {
   const calculateClassStats = (classId) => {
     const clsStudents = students[classId] || [];
     if (clsStudents.length === 0) return null;
-
     let totalAttendance = 0;
     let studentCount = 0;
     clsStudents.forEach((student) => {
@@ -449,7 +450,6 @@ function AttendanceSystem() {
         studentCount += 1;
       }
     });
-
     return studentCount > 0 ? totalAttendance / studentCount : 0;
   };
 
@@ -502,7 +502,6 @@ function AttendanceSystem() {
               </div>
             </div>
           </div>
-
           <div className="border-b border-gray-200 bg-gray-50">
             <div className="flex gap-1 px-6">
               {[
@@ -531,7 +530,6 @@ function AttendanceSystem() {
               })}
             </div>
           </div>
-
           <div className="p-6 bg-gradient-to-r from-gray-50 to-indigo-50">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -566,7 +564,6 @@ function AttendanceSystem() {
               </div>
             </div>
           </div>
-
           {message.text && (
             <div className="p-6 border-t border-gray-100">
               <div
@@ -642,7 +639,6 @@ function AttendanceSystem() {
                   </button>
                 </div>
               </div>
-
               <div className="overflow-x-auto rounded-2xl border border-gray-200">
                 <table className="w-full">
                   <thead>
@@ -700,21 +696,22 @@ function AttendanceSystem() {
             </div>
           )}
 
-          {activeTab === 'yoklama' && (!selectedClass || currentClassStudents.length === 0 || effectiveLessonCount === 0) && (
-            <div className="text-center py-20">
-              <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-100 rounded-full mb-6">
-                <Calendar className="w-10 h-10 text-indigo-600" />
+          {activeTab === 'yoklama' &&
+            (!selectedClass || currentClassStudents.length === 0 || effectiveLessonCount === 0) && (
+              <div className="text-center py-20">
+                <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-100 rounded-full mb-6">
+                  <Calendar className="w-10 h-10 text-indigo-600" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900 mb-3">Yoklama almak için seçim yapın</h3>
+                <p className="text-gray-600 max-w-md mx-auto">
+                  {selectedClass
+                    ? shouldShowManualLessonPrompt
+                      ? 'Bu sınıf için bugüne ait ders sayısı tanımlı değil. Yukarıdaki alandan ders sayısını girerek yoklamayı başlatabilirsiniz.'
+                      : 'Bu sınıf için seçilen tarihte ders bulunmuyor veya öğrenci listesi boş.'
+                    : 'Öncelikle üst kısımdan sınıf ve tarih seçerek yoklamayı başlatabilirsiniz.'}
+                </p>
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-3">Yoklama almak için seçim yapın</h3>
-              <p className="text-gray-600 max-w-md mx-auto">
-                {selectedClass
-                  ? shouldShowManualLessonPrompt
-                    ? 'Bu sınıf için bugüne ait ders sayısı tanımlı değil. Yukarıdaki alandan ders sayısını girerek yoklamayı başlatabilirsiniz.'
-                    : 'Bu sınıf için seçilen tarihte ders bulunmuyor veya öğrenci listesi boş.'
-                  : 'Öncelikle üst kısımdan sınıf ve tarih seçerek yoklamayı başlatabilirsiniz.'}
-              </p>
-            </div>
-          )}
+            )}
 
           {activeTab === 'raporlar' && (
             <div className="space-y-8">
@@ -735,7 +732,6 @@ function AttendanceSystem() {
                   </div>
                 </div>
               </div>
-
               <div>
                 <div className="flex items-center gap-3 mb-6">
                   <TrendingUp className="w-6 h-6 text-indigo-600" />
@@ -764,7 +760,6 @@ function AttendanceSystem() {
                   })}
                 </div>
               </div>
-
               {selectedClass && currentClassStudents.length > 0 && (
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900 mb-6">Öğrenci Devamsızlık Raporu</h2>
@@ -825,7 +820,6 @@ function AttendanceSystem() {
                   </div>
                 </div>
               )}
-
               {(!selectedClass || currentClassStudents.length === 0) && (
                 <div className="text-center py-20">
                   <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-100 rounded-full mb-6">
@@ -871,7 +865,6 @@ function AttendanceSystem() {
                   </button>
                 </div>
               </div>
-
               {currentClassStudents.length > 0 && (
                 <div className="bg-white border-2 border-gray-200 rounded-2xl p-6">
                   <div className="flex items-center justify-between mb-4">
@@ -905,7 +898,6 @@ function AttendanceSystem() {
                   </div>
                 </div>
               )}
-
               {!selectedClass && (
                 <div className="text-center py-20">
                   <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-100 rounded-full mb-6">
