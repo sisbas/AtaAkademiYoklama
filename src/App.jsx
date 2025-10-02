@@ -217,6 +217,36 @@ const createStudentRecord = (student, index) => {
   };
 };
 
+const describeStudentLoadError = (error) => {
+  if (!error) {
+    return 'Öğrenci verileri yüklenirken bir sorun oluştu.';
+  }
+
+  const details = [
+    typeof error?.payload?.error === 'string' ? error.payload.error : '',
+    typeof error?.message === 'string' ? error.message : '',
+    typeof error?.rawBody === 'string' ? error.rawBody : ''
+  ]
+    .map((value) => value.toLowerCase())
+    .filter(Boolean);
+
+  const includes = (needle) => details.some((value) => value.includes(needle));
+
+  if (includes('neon_database_url')) {
+    return 'Öğrenci verileri yüklenemedi çünkü Netlify fonksiyonu NEON_DATABASE_URL ortam değişkeni ile yapılandırılmamış. Neon bağlantı bilgisini ekleyip yeniden deneyin.';
+  }
+
+  if (includes('failed to fetch') || includes('networkerror')) {
+    return 'Öğrenci verileri yüklenemedi çünkü sunucuya ulaşılamadı. İnternet bağlantınızı ve VITE_STUDENTS_API / Netlify ayarlarınızı kontrol edin.';
+  }
+
+  if (typeof error?.status === 'number') {
+    return `Öğrenci verileri yüklenemedi (HTTP ${error.status}). Sunucu yanıtını kontrol edin ve ardından tekrar deneyin.`;
+  }
+
+  return 'Öğrenci verileri yüklenirken bir sorun oluştu.';
+};
+
 const getStatusColor = (status) => {
   const colors = {
     geldi: 'bg-green-500 hover:bg-green-600',
@@ -276,6 +306,7 @@ const AttendanceSystem = () => {
           return;
         }
         console.error('Öğrenci verileri alınamadı', error);
+        setLoadError(describeStudentLoadError(error));
         setLoadError('Öğrenci verileri yüklenirken bir sorun oluştu.');
       } finally {
         setLoadingStudents(false);
@@ -283,6 +314,14 @@ const AttendanceSystem = () => {
     },
     []
   );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadStudents(controller.signal);
+    return () => controller.abort();
+  }, [loadStudents]);
+
+  useEffect(() => {
 
   useEffect(() => {
     const controller = new AbortController();

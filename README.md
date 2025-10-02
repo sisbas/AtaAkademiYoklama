@@ -32,6 +32,7 @@ netlify dev
 
 `netlify dev` komutu hem Vite geliştirme sunucusunu hem de Netlify Functions katmanını birlikte çalıştırır. Tarayıcınızda [http://localhost:8888](http://localhost:8888) adresini açarak uygulamayı görüntüleyebilirsiniz. Sadece Vite sunucusunu (`npm run dev`) çalıştırmak isterseniz API isteklerini yönlendirecek `VITE_STUDENTS_API` değişkenini sağlamanız gerekir.
 
+
 ## Üretim İçin Derleme
 
 ```bash

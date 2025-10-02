@@ -52,6 +52,24 @@ async function fetchStudentsPage({
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => '');
+    let parsedBody = null;
+    if (errorText) {
+      try {
+        parsedBody = JSON.parse(errorText);
+      } catch (parseError) {
+        // metin JSON değilse sessizce yoksay
+      }
+    }
+
+    const error = new Error(
+      parsedBody?.error
+        ? `Öğrenci verileri alınamadı: ${parsedBody.error}`
+        : `Öğrenci verileri alınamadı (HTTP ${response.status})`
+    );
+    error.status = response.status;
+    error.payload = parsedBody;
+    error.rawBody = errorText;
+    throw error;
     throw new Error(
       `Öğrenci verileri alınamadı (HTTP ${response.status}): ${errorText}`
     );
