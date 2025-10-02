@@ -1,14 +1,31 @@
 {
-  "name": "ata-yoklama",
+  "name": "ata-akademi-yoklama",
   "version": "1.0.0",
+  "description": "Ata Akademi için modern yoklama takip sistemi",
+  "main": "src/index.js",
   "scripts": {
-    "dev": "netlify dev"
+    "dev": "netlify dev",
+    "build": "echo 'No build step required'",
+    "deploy": "netlify deploy --prod",
+    "test": "echo 'Tests not yet implemented'"
   },
+  "keywords": [
+    "attendance",
+    "education",
+    "school",
+    "yoklama"
+  ],
+  "author": "Ata Akademi",
+  "license": "MIT",
   "dependencies": {
     "pg": "^8.11.3",
     "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "netlify-cli": "^17.24.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   }
 }
