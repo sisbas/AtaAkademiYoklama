@@ -70,17 +70,21 @@ async function fetchStudentsPage({
     error.payload = parsedBody;
     error.rawBody = errorText;
     throw error;
-
-    throw new Error(
-      `Öğrenci verileri alınamadı (HTTP ${response.status}): ${errorText}`
-    );
   }
 
   const payload = await response.json();
-  const total = typeof payload.total === 'number' ? payload.total : 0;
+  const parsedTotal = Number(payload.total);
+  const parsedLimit = Number(payload.limit);
+  const parsedOffset = Number(payload.offset);
+
+  const total = Number.isFinite(parsedTotal) && parsedTotal >= 0 ? parsedTotal : 0;
+  const normalizedLimit =
+    Number.isFinite(parsedLimit) && parsedLimit >= 0 ? parsedLimit : undefined;
+  const normalizedOffset =
+    Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : undefined;
   const rows = Array.isArray(payload.rows) ? payload.rows : [];
 
-  return { total, rows, limit: payload.limit, offset: payload.offset };
+  return { total, rows, limit: normalizedLimit, offset: normalizedOffset };
 }
 
 export async function fetchAllStudents({ signal, classId, section, hasEmail } = {}) {
@@ -89,7 +93,7 @@ export async function fetchAllStudents({ signal, classId, section, hasEmail } = 
   let total = Number.POSITIVE_INFINITY;
 
   while (offset < total) {
-    const { rows, total: pageTotal } = await fetchStudentsPage({
+    const { rows, total: pageTotal, limit } = await fetchStudentsPage({
       limit: PAGE_SIZE,
       offset,
       classId,
@@ -98,24 +102,28 @@ export async function fetchAllStudents({ signal, classId, section, hasEmail } = 
       signal
     });
 
-    if (!Number.isFinite(total)) {
-      if (Number.isFinite(pageTotal) && pageTotal > 0) {
-        total = pageTotal;
-      } else {
-        total = offset + rows.length;
-      }
+    if (Number.isFinite(pageTotal) && pageTotal >= 0) {
+      total = pageTotal;
     }
 
     allRows.push(...rows);
 
-    if (rows.length < PAGE_SIZE) {
+    if (rows.length === 0) {
       break;
     }
 
-    offset += PAGE_SIZE;
+    const step = Number.isFinite(limit) && limit > 0 ? limit : rows.length || PAGE_SIZE;
+    offset += step;
+
+    if (rows.length < step) {
+      break;
+    }
   }
 
-  return { rows: allRows, total: Number.isFinite(total) ? total : allRows.length };
+  return {
+    rows: allRows,
+    total: Number.isFinite(total) ? total : allRows.length
+  };
 }
 
 export async function fetchStudentsWithFilters(options = {}) {
