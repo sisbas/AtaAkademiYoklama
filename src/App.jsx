@@ -301,27 +301,19 @@ const AttendanceSystem = () => {
       try {
         const { rows } = await fetchAllStudents({ signal });
         setAllStudents(rows);
+        setMessage({ type: 'success', text: `${rows.length} öğrenci başarıyla yüklendi!` });
       } catch (error) {
         if (error.name === 'AbortError') {
           return;
         }
         console.error('Öğrenci verileri alınamadı', error);
         setLoadError(describeStudentLoadError(error));
-        setLoadError('Öğrenci verileri yüklenirken bir sorun oluştu.');
       } finally {
         setLoadingStudents(false);
       }
     },
     []
   );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    loadStudents(controller.signal);
-    return () => controller.abort();
-  }, [loadStudents]);
-
-  useEffect(() => {
 
   useEffect(() => {
     const controller = new AbortController();
@@ -457,7 +449,11 @@ const AttendanceSystem = () => {
     const newRecords = { ...savedRecords, [key]: { ...attendance } };
     setSavedRecords(newRecords);
     persistRecords(newRecords);
-    setMessage({ type: 'success', text: 'Yoklama kaydedildi!' });
+    setMessage({ type: 'success', text: 'Yoklama başarıyla kaydedildi!' });
+    
+    setTimeout(() => {
+      setMessage({ type: '', text: '' });
+    }, 3000);
   };
 
   const calculateStudentStats = useCallback(
@@ -569,7 +565,12 @@ const AttendanceSystem = () => {
     classStudents.forEach((student) => {
       const row = [student.fullName];
       for (let i = 1; i <= lessonTotal; i += 1) {
-        row.push(attendance[`${student.dbId}-${i}`] || '-');
+        const status = attendance[`${student.dbId}-${i}`] || '-';
+        const statusText = status === 'geldi' ? 'G' : 
+                          status === 'gelmedi' ? 'Y' : 
+                          status === 'mazeretli' ? 'M' : 
+                          status === 'izinli' ? 'İ' : '-';
+        row.push(statusText);
       }
       csv += row.join(',') + '\n';
     });
@@ -579,10 +580,13 @@ const AttendanceSystem = () => {
     link.href = URL.createObjectURL(blob);
     link.download = `Yoklama_${className.replace(/\s+/g, '_')}_${selectedDate}.csv`;
     link.click();
+    setMessage({ type: 'success', text: 'CSV dosyası indirildi!' });
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000);
   };
 
   const handleRefresh = () => {
-    loadStudents();
+    const controller = new AbortController();
+    loadStudents(controller.signal);
   };
 
   return (
@@ -618,7 +622,7 @@ const AttendanceSystem = () => {
 
           {message.text && (
             <div
-              className={`p-4 rounded-lg mb-4 ${
+              className={`p-4 rounded-lg mb-4 flex items-center justify-between ${
                 message.type === 'success'
                   ? 'bg-green-100 text-green-800'
                   : message.type === 'error'
@@ -628,13 +632,23 @@ const AttendanceSystem = () => {
                   : 'bg-blue-100 text-blue-800'
               }`}
             >
-              {message.text}
+              <span>{message.text}</span>
+              <button
+                onClick={() => setMessage({ type: '', text: '' })}
+                className="ml-4 hover:opacity-70"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
 
           {loadError && (
-            <div className="p-4 rounded-lg mb-4 bg-red-100 text-red-700">
-              {loadError}
+            <div className="p-4 rounded-lg mb-4 bg-red-100 text-red-700 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-semibold mb-1">Veri Yükleme Hatası</p>
+                <p className="text-sm">{loadError}</p>
+              </div>
             </div>
           )}
 
@@ -646,7 +660,8 @@ const AttendanceSystem = () => {
               <select
                 value={selectedClassKey}
                 onChange={(e) => setSelectedClassKey(e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                disabled={loadingStudents}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
               >
                 <option value="">Sınıf seçiniz...</option>
                 {classMetaList.map((cls) => (
@@ -670,9 +685,9 @@ const AttendanceSystem = () => {
           </div>
 
           {loadingStudents && (
-            <div className="flex items-center gap-2 text-indigo-600 mb-4">
-              <Loader2 className="w-5 h-5 animate-spin" />
-              <span>Öğrenci verileri yükleniyor...</span>
+            <div className="flex items-center justify-center gap-3 text-indigo-600 mb-4 p-8 bg-indigo-50 rounded-lg">
+              <Loader2 className="w-6 h-6 animate-spin" />
+              <span className="font-medium">Neon veritabanından öğrenci verileri yükleniyor...</span>
             </div>
           )}
 
@@ -682,12 +697,17 @@ const AttendanceSystem = () => {
             lessonCount > 0 && (
               <div>
                 <div className="mb-4 p-4 bg-indigo-50 rounded-lg flex justify-between items-center">
-                  <p className="text-sm font-medium text-indigo-800">
-                    {classStudents.length} öğrenci • {lessonCount} ders
-                  </p>
+                  <div>
+                    <p className="text-sm font-medium text-indigo-800">
+                      {classStudents.length} öğrenci • {lessonCount} ders
+                    </p>
+                    <p className="text-xs text-indigo-600 mt-1">
+                      {selectedClassMeta.name} - {new Date(selectedDate).toLocaleDateString('tr-TR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    </p>
+                  </div>
                   <button
                     onClick={downloadCSV}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm"
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
                   >
                     <Download className="w-4 h-4" /> CSV İndir
                   </button>
@@ -697,7 +717,7 @@ const AttendanceSystem = () => {
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="bg-gray-50">
-                        <th className="p-3 text-left font-semibold text-gray-700 border">
+                        <th className="p-3 text-left font-semibold text-gray-700 border sticky left-0 bg-gray-50 z-10">
                           Öğrenci Adı
                         </th>
                         {Array.from({ length: lessonCount }, (_, i) => (
@@ -712,8 +732,8 @@ const AttendanceSystem = () => {
                     </thead>
                     <tbody>
                       {classStudents.map((student) => (
-                        <tr key={student.dbId} className="hover:bg-gray-50">
-                          <td className="p-3 font-medium text-gray-800 border">
+                        <tr key={student.dbId} className="hover:bg-gray-50 transition-colors">
+                          <td className="p-3 font-medium text-gray-800 border sticky left-0 bg-white">
                             {student.fullName}
                           </td>
                           {Array.from({ length: lessonCount }, (_, i) => {
@@ -733,10 +753,11 @@ const AttendanceSystem = () => {
                                             status
                                           )
                                         }
+                                        title={status === 'geldi' ? 'Geldi' : status === 'gelmedi' ? 'Gelmedi' : status === 'mazeretli' ? 'Mazeretli' : 'İzinli'}
                                         className={`p-2 rounded transition-all ${
                                           currentStatus === status
-                                            ? `${getStatusColor(status)} text-white`
-                                            : 'bg-gray-100 text-gray-400'
+                                            ? `${getStatusColor(status)} text-white shadow-md`
+                                            : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
                                         }`}
                                       >
                                         {getStatusIcon(status)}
@@ -755,7 +776,7 @@ const AttendanceSystem = () => {
 
                 <button
                   onClick={saveAttendance}
-                  className="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2"
+                  className="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition-colors"
                 >
                   <Save className="w-5 h-5" /> Yoklamayı Kaydet
                 </button>
@@ -763,38 +784,58 @@ const AttendanceSystem = () => {
             )}
 
           {activeTab === 'yoklama' && selectedClassMeta && lessonCount === 0 && (
-            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700">
-              Seçilen sınıfın bu gün için ders programı bulunmuyor.
+            <div className="p-6 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold mb-1">Ders Programı Bulunamadı</p>
+                <p className="text-sm">Seçilen sınıfın bu gün ({new Date(selectedDate).toLocaleDateString('tr-TR', { weekday: 'long' })}) için ders programı bulunmuyor.</p>
+              </div>
             </div>
           )}
 
           {activeTab === 'yoklama' && selectedClassMeta && classStudents.length === 0 && (
-            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-gray-600">
-              Bu sınıf için kayıtlı öğrenci bulunamadı.
+            <div className="p-6 bg-gray-50 border border-gray-200 rounded-lg text-gray-600 flex items-start gap-3">
+              <Users className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold mb-1">Öğrenci Bulunamadı</p>
+                <p className="text-sm">Bu sınıf için kayıtlı öğrenci bulunamadı. Lütfen veritabanını kontrol edin.</p>
+              </div>
             </div>
           )}
 
           {activeTab === 'raporlar' && (
             <div>
               <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-                <strong>Devamsızlık Hakları:</strong> 9-10-11: 10+10 | 12-Mezun-TYT:
-                20+20 <strong>| Sıfırlama:</strong> 16 Ocak 2026
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold mb-2">Devamsızlık Hakları</p>
+                    <ul className="space-y-1">
+                      <li><strong>9-10-11. Sınıflar:</strong> 10 Mazeretli + 10 Mazeretsiz = 20 Toplam</li>
+                      <li><strong>12-Mezun-TYT:</strong> 20 Mazeretli + 20 Mazeretsiz = 40 Toplam</li>
+                      <li><strong>Sıfırlama Tarihi:</strong> 16 Ocak 2026</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
 
-              <h2 className="text-xl font-bold mb-4">Sınıf Devamlılık İstatistikleri</h2>
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Users className="w-6 h-6" />
+                Sınıf Devamlılık İstatistikleri
+              </h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
                 {classMetaList.map((cls) => {
                   const stats = calculateClassStats(cls.classKey);
                   if (stats === null) return null;
                   return (
-                    <div key={cls.classKey} className="bg-white border rounded-lg p-4 shadow-sm">
+                    <div key={cls.classKey} className="bg-white border-2 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
                       <h3 className="font-semibold text-gray-700 mb-2">{cls.name}</h3>
-                      <div className="text-2xl font-bold text-indigo-600">
+                      <div className="text-3xl font-bold text-indigo-600 mb-2">
                         {stats.toFixed(1)}%
                       </div>
-                      <div className="mt-2 bg-gray-200 rounded-full h-2">
+                      <div className="mt-2 bg-gray-200 rounded-full h-3">
                         <div
-                          className="bg-indigo-600 h-full rounded-full"
+                          className="bg-indigo-600 h-full rounded-full transition-all"
                           style={{ width: `${Math.min(stats, 100)}%` }}
                         />
                       </div>
@@ -805,18 +846,22 @@ const AttendanceSystem = () => {
 
               {selectedClassMeta && classStudents.length > 0 && (
                 <div>
-                  <h2 className="text-xl font-bold mb-4">Öğrenci Devamsızlık Raporu</h2>
+                  <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                    <AlertCircle className="w-6 h-6" />
+                    Öğrenci Devamsızlık Raporu - {selectedClassMeta.name}
+                  </h2>
                   <div className="overflow-x-auto">
                     <table className="w-full border-collapse text-sm">
                       <thead>
                         <tr className="bg-gray-50">
-                          <th className="p-2 text-left border">Öğrenci</th>
-                          <th className="p-2 text-center border">Toplam</th>
-                          <th className="p-2 text-center border">Geldi</th>
-                          <th className="p-2 text-center border">Gelmedi</th>
-                          <th className="p-2 text-center border">Mazeretli</th>
-                          <th className="p-2 text-center border">Devam %</th>
-                          <th className="p-2 text-center border">Durum</th>
+                          <th className="p-3 text-left border font-semibold">Öğrenci</th>
+                          <th className="p-3 text-center border font-semibold">Toplam Ders</th>
+                          <th className="p-3 text-center border font-semibold">Geldi</th>
+                          <th className="p-3 text-center border font-semibold">Gelmedi</th>
+                          <th className="p-3 text-center border font-semibold">Mazeretli</th>
+                          <th className="p-3 text-center border font-semibold">İzinli</th>
+                          <th className="p-3 text-center border font-semibold">Devam %</th>
+                          <th className="p-3 text-center border font-semibold">Durum</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -833,23 +878,26 @@ const AttendanceSystem = () => {
                           return (
                             <tr
                               key={student.dbId}
-                              className={`border-l-4 ${statusInfo.color}`}
+                              className={`border-l-4 ${statusInfo.color} hover:bg-gray-50 transition-colors`}
                             >
-                              <td className="p-2 border">{student.fullName}</td>
-                              <td className="p-2 text-center border">{stats.totalLessons}</td>
-                              <td className="p-2 text-center border text-green-600">
+                              <td className="p-3 border font-medium">{student.fullName}</td>
+                              <td className="p-3 text-center border">{stats.totalLessons}</td>
+                              <td className="p-3 text-center border text-green-600 font-semibold">
                                 {stats.attended}
                               </td>
-                              <td className="p-2 text-center border text-red-600">
+                              <td className="p-3 text-center border text-red-600 font-semibold">
                                 {stats.absent}/{limits.unexcused}
                               </td>
-                              <td className="p-2 text-center border text-yellow-600">
+                              <td className="p-3 text-center border text-yellow-600 font-semibold">
                                 {stats.excused}/{limits.excused}
                               </td>
-                              <td className="p-2 text-center border font-bold">
+                              <td className="p-3 text-center border text-blue-600 font-semibold">
+                                {stats.onLeave}
+                              </td>
+                              <td className="p-3 text-center border font-bold text-lg">
                                 {stats.attendanceRate.toFixed(1)}%
                               </td>
-                              <td className={`p-2 text-center border ${statusInfo.textColor}`}>
+                              <td className={`p-3 text-center border ${statusInfo.textColor} text-xl`}>
                                 {statusInfo.status === 'critical'
                                   ? '🔴'
                                   : statusInfo.status === 'warning'
@@ -864,25 +912,31 @@ const AttendanceSystem = () => {
                   </div>
                 </div>
               )}
+
+              {selectedClassMeta && classStudents.length === 0 && (
+                <div className="p-6 bg-gray-50 border rounded-lg text-gray-600">
+                  Bu sınıf için öğrenci bulunamadı.
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === 'ogrenciler' && (
             <div>
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6 p-4 bg-indigo-50 rounded-lg">
                 <div>
-                  <p className="text-sm text-gray-600">
-                    Toplam kayıtlı öğrenci: {normalizedStudents.length}
+                  <p className="text-lg font-semibold text-indigo-900">
+                    📊 Toplam kayıtlı öğrenci: {normalizedStudents.length}
                   </p>
                   {selectedClassMeta && (
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-indigo-700 mt-1">
                       {selectedClassMeta.name}: {classStudents.length} öğrenci
                     </p>
                   )}
                 </div>
                 <button
                   onClick={handleRefresh}
-                  className="inline-flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg"
+                  className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors"
                   disabled={loadingStudents}
                 >
                   {loadingStudents ? (
@@ -895,45 +949,56 @@ const AttendanceSystem = () => {
               </div>
 
               {selectedClassMeta && classStudents.length > 0 ? (
-                <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                  <p className="font-medium mb-3">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="font-semibold text-lg mb-4 text-gray-800">
                     {selectedClassMeta.name} Öğrencileri ({classStudents.length}):
                   </p>
-                  {classStudents.map((student, idx) => (
-                    <div
-                      key={student.dbId}
-                      className="bg-white p-3 rounded-lg mb-2 shadow-sm border"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-800">
-                          {idx + 1}. {student.fullName}
-                        </span>
-                        <span className="text-xs font-semibold text-indigo-600">
-                          {student.section || 'GENEL'}
-                        </span>
-                      </div>
-                      {Array.isArray(student.iletisim) && student.iletisim.length > 0 ? (
-                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-600">
-                          {student.iletisim.map((contact, contactIdx) => (
-                            <div key={`${student.dbId}-contact-${contactIdx}`}>
-                              <span className="uppercase tracking-wide text-gray-500">
-                                {normalizeText(contact.alan)}:
-                              </span>{' '}
-                              <span>{normalizeText(contact.deger) || '-'}</span>
-                            </div>
-                          ))}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
+                    {classStudents.map((student, idx) => (
+                      <div
+                        key={student.dbId}
+                        className="bg-white p-4 rounded-lg shadow-sm border hover:shadow-md transition-shadow"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-semibold text-gray-800">
+                            {idx + 1}. {student.fullName}
+                          </span>
+                          <span className="text-xs font-bold px-2 py-1 bg-indigo-100 text-indigo-700 rounded">
+                            {student.section || 'GENEL'}
+                          </span>
                         </div>
-                      ) : (
-                        <p className="mt-2 text-xs text-gray-500">
-                          İletişim bilgisi bulunmuyor.
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                        {Array.isArray(student.iletisim) && student.iletisim.length > 0 ? (
+                          <div className="mt-3 space-y-2 text-sm">
+                            {student.iletisim.map((contact, contactIdx) => (
+                              <div 
+                                key={`${student.dbId}-contact-${contactIdx}`}
+                                className="flex items-start gap-2"
+                              >
+                                <span className="uppercase tracking-wide text-gray-500 font-medium min-w-[100px]">
+                                  {normalizeText(contact.alan)}:
+                                </span>
+                                <span className="text-gray-700">
+                                  {normalizeText(contact.deger) || '-'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-xs text-gray-400 italic">
+                            İletişim bilgisi bulunmuyor.
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : (
-                <div className="p-4 bg-white border rounded-lg text-gray-600">
-                  Seçilen sınıf için öğrenci bulunmuyor.
+                <div className="p-6 bg-white border rounded-lg text-gray-600 flex items-start gap-3">
+                  <Users className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold mb-1">Öğrenci Bulunamadı</p>
+                    <p className="text-sm">Seçilen sınıf için öğrenci bulunmuyor veya veriler henüz yüklenmedi.</p>
+                  </div>
                 </div>
               )}
             </div>
