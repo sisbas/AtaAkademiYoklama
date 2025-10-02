@@ -2,16 +2,33 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false // Neon ile uyumlu
+const hasDatabase = Boolean(process.env.DATABASE_URL);
+
+let pool;
+if (hasDatabase) {
+  const poolConfig = {
+    connectionString: process.env.DATABASE_URL
+  };
+
+  // Production ortamlarında SSL gerekli olabilir. Yerel geliştirmede
+  // "DATABASE_SSL=false" tanımlanarak devre dışı bırakılabilir.
+  const shouldUseSSL = process.env.DATABASE_SSL !== 'false';
+  if (shouldUseSSL) {
+    poolConfig.ssl = {
+      rejectUnauthorized: false // Neon ile uyumlu
+    };
   }
-});
+
+  pool = new Pool(poolConfig);
+}
 
 let initPromise;
 
 async function ensureSchema() {
+  if (!hasDatabase) {
+    return;
+  }
+
   if (!initPromise) {
     initPromise = (async () => {
       await pool.query(`
@@ -45,7 +62,12 @@ async function ensureSchema() {
 }
 
 module.exports = {
+  hasDatabase,
   query: async (text, params) => {
+    if (!hasDatabase) {
+      throw new Error('DATABASE_URL ayarlanmadığı için veritabanına bağlanılamıyor.');
+    }
+
     await ensureSchema();
     return pool.query(text, params);
   }
