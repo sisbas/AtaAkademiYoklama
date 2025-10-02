@@ -2,39 +2,325 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <title>Ata Akademi - Yoklama</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ata Akademi - Yoklama Sistemi</title>
   <style>
-    body { font-family: Arial; margin: 30px; }
-    select, input, button { padding: 8px; margin: 5px; }
-    .status { margin-left: 10px; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 2em;
+      margin-bottom: 5px;
+    }
+
+    .header p {
+      opacity: 0.9;
+    }
+
+    .controls {
+      padding: 30px;
+      background: #f8f9fa;
+      border-bottom: 1px solid #dee2e6;
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+      align-items: end;
+    }
+
+    .form-group {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: #495057;
+    }
+
+    select, input[type="date"] {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #dee2e6;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: all 0.3s;
+    }
+
+    select:focus, input[type="date"]:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .btn {
+      padding: 12px 30px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .content {
+      padding: 30px;
+    }
+
+    .info-box {
+      background: #e7f3ff;
+      border-left: 4px solid #2196F3;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 4px;
+    }
+
+    .info-box.warning {
+      background: #fff3cd;
+      border-left-color: #ffc107;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .stat-card .number {
+      font-size: 2em;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .stat-card .label {
+      opacity: 0.9;
+      font-size: 0.9em;
+    }
+
+    .attendance-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .student-row {
+      display: flex;
+      align-items: center;
+      padding: 15px;
+      background: white;
+      border: 2px solid #dee2e6;
+      border-radius: 8px;
+      transition: all 0.3s;
+    }
+
+    .student-row:hover {
+      border-color: #667eea;
+      box-shadow: 0 2px 10px rgba(102, 126, 234, 0.1);
+    }
+
+    .student-name {
+      flex: 1;
+      font-weight: 600;
+      color: #212529;
+    }
+
+    .status-select {
+      padding: 8px 12px;
+      border: 2px solid #dee2e6;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.3s;
+      min-width: 150px;
+    }
+
+    .status-select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .status-select.geldi {
+      background-color: #d4edda;
+      border-color: #28a745;
+      color: #155724;
+    }
+
+    .status-select.gelmedi {
+      background-color: #f8d7da;
+      border-color: #dc3545;
+      color: #721c24;
+    }
+
+    .status-select.mazeretli {
+      background-color: #fff3cd;
+      border-color: #ffc107;
+      color: #856404;
+    }
+
+    .status-select.izinli {
+      background-color: #d1ecf1;
+      border-color: #17a2b8;
+      color: #0c5460;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #6c757d;
+    }
+
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #6c757d;
+    }
+
+    .empty-state svg {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 20px;
+      opacity: 0.3;
+    }
+
+    @media (max-width: 768px) {
+      .controls {
+        flex-direction: column;
+      }
+
+      .form-group {
+        width: 100%;
+      }
+
+      .student-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+
+      .status-select {
+        width: 100%;
+      }
+    }
   </style>
 </head>
 <body>
-  <h2>Ata Akademi Yoklama Sistemi</h2>
+  <div class="container">
+    <div class="header">
+      <h1>🎓 Ata Akademi</h1>
+      <p>Yoklama Takip Sistemi</p>
+    </div>
 
-  <div>
-    <label>Sınıf:</label>
-    <select id="classSelect">
-      <!-- JS ile doldurulacak -->
-    </select>
+    <div class="controls">
+      <div class="form-group">
+        <label for="classSelect">Sınıf Seçin</label>
+        <select id="classSelect">
+          <option value="">Sınıf seçin...</option>
+        </select>
+      </div>
 
-    <label>Tarih:</label>
-    <input type="date" id="dateInput" />
+      <div class="form-group">
+        <label for="dateInput">Tarih</label>
+        <input type="date" id="dateInput" />
+      </div>
+
+      <button class="btn btn-primary" onclick="loadAttendance()">
+        Yoklamayı Getir
+      </button>
+    </div>
+
+    <div class="content">
+      <div id="statsContainer" style="display: none;"></div>
+      <div id="attendanceList"></div>
+    </div>
   </div>
-
-  <button onclick="loadAttendance()">Yoklamayı Getir</button>
-  <div id="attendanceList"></div>
 
   <script>
     const classes = [
-      "TYT Sınıfı", "9. Sınıf", "10. Sınıf", "11 Say 1", "11 Say 2", "11 Ea 1", "11 Ea 2",
+      "TYT Sınıfı", "9. Sınıf", "10. Sınıf", 
+      "11 Say 1", "11 Say 2", "11 Ea 1", "11 Ea 2",
       "12 Say 1", "12 Say 2", "12 Say 3", "12 Ea 1", "12 Ea 2", "12 Ea 3",
-      "Mezun Ea 1", "Mezun Ea 2", "Mezun Ea 3", "Mezun Say 1", "Mezun Say 2", "Mezun Say 3"
+      "Mezun Ea 1", "Mezun Ea 2", "Mezun Ea 3", 
+      "Mezun Say 1", "Mezun Say 2", "Mezun Say 3"
     ];
 
     const classSelect = document.getElementById('classSelect');
     const dateInput = document.getElementById('dateInput');
     const attendanceList = document.getElementById('attendanceList');
+    const statsContainer = document.getElementById('statsContainer');
+
+    let currentStudents = [];
 
     // Sınıf listesi doldur
     classes.forEach(cls => {
@@ -51,50 +337,232 @@
     async function loadAttendance() {
       const cls = classSelect.value;
       const date = dateInput.value;
-      if (!cls || !date) return alert('Sınıf ve tarih seçin.');
+      
+      if (!cls || !date) {
+        showMessage('Lütfen sınıf ve tarih seçin.', 'warning');
+        return;
+      }
 
-      const res = await fetch(`/attendance?class=${encodeURIComponent(cls)}&date=${date}`);
-      const data = await res.json();
+      showLoading();
 
-      if (!res.ok) return alert(data.error || 'Hata oluştu.');
+      try {
+        const res = await fetch(`/attendance?class=${encodeURIComponent(cls)}&date=${date}`);
+        const data = await res.json();
 
-      let html = `<h3>${cls} - ${date}</h3><ul>`;
-      data.forEach(student => {
+        if (!res.ok) {
+          showMessage(data.error || 'Hata oluştu.', 'error');
+          return;
+        }
+
+        currentStudents = data;
+        displayAttendance(data, cls, date);
+        displayStats(data);
+      } catch (error) {
+        showMessage('Bağlantı hatası: ' + error.message, 'error');
+      }
+    }
+
+    function displayAttendance(students, className, date) {
+      if (students.length === 0) {
+        attendanceList.innerHTML = `
+          <div class="empty-state">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+            </svg>
+            <h3>Öğrenci Bulunamadı</h3>
+            <p>Bu sınıfta kayıtlı öğrenci bulunmamaktadır.</p>
+          </div>
+        `;
+        statsContainer.style.display = 'none';
+        return;
+      }
+
+      let html = `
+        <div class="info-box">
+          <strong>${className}</strong> - ${formatDate(date)} 
+          <span style="float: right;">${students.length} Öğrenci</span>
+        </div>
+        <div class="attendance-list">
+      `;
+
+      students.forEach(student => {
         html += `
-          <li>
-            ${student.name}
-            <select class="status" data-id="${student.id}" onchange="saveStatus(this, '${date}')">
-              <option value="">Seç...</option>
-              <option value="geldi" ${student.status === 'geldi' ? 'selected' : ''}>Geldi</option>
-              <option value="gelmedi" ${student.status === 'gelmedi' ? 'selected' : ''}>Gelmedi</option>
-              <option value="mazeretli" ${student.status === 'mazeretli' ? 'selected' : ''}>Mazeretli</option>
-              <option value="izinli" ${student.status === 'izinli' ? 'selected' : ''}>İzinli</option>
+          <div class="student-row">
+            <span class="student-name">${student.name}</span>
+            <select class="status-select ${student.status}" 
+                    data-id="${student.id}" 
+                    onchange="saveStatus(this, '${date}')">
+              <option value="">Durum Seçin...</option>
+              <option value="geldi" ${student.status === 'geldi' ? 'selected' : ''}>✓ Geldi</option>
+              <option value="gelmedi" ${student.status === 'gelmedi' ? 'selected' : ''}>✗ Gelmedi</option>
+              <option value="mazeretli" ${student.status === 'mazeretli' ? 'selected' : ''}>⚠ Mazeretli</option>
+              <option value="izinli" ${student.status === 'izinli' ? 'selected' : ''}>📝 İzinli</option>
             </select>
-          </li>`;
+          </div>
+        `;
       });
-      html += '</ul>';
+
+      html += '</div>';
       attendanceList.innerHTML = html;
+    }
+
+    function displayStats(students) {
+      const stats = {
+        geldi: students.filter(s => s.status === 'geldi').length,
+        gelmedi: students.filter(s => s.status === 'gelmedi').length,
+        mazeretli: students.filter(s => s.status === 'mazeretli').length,
+        izinli: students.filter(s => s.status === 'izinli').length,
+        total: students.length
+      };
+
+      const recorded = stats.geldi + stats.gelmedi + stats.mazeretli + stats.izinli;
+
+      statsContainer.innerHTML = `
+        <div class="stats">
+          <div class="stat-card">
+            <div class="number">${stats.geldi}</div>
+            <div class="label">Geldi</div>
+          </div>
+          <div class="stat-card">
+            <div class="number">${stats.gelmedi}</div>
+            <div class="label">Gelmedi</div>
+          </div>
+          <div class="stat-card">
+            <div class="number">${stats.mazeretli}</div>
+            <div class="label">Mazeretli</div>
+          </div>
+          <div class="stat-card">
+            <div class="number">${stats.izinli}</div>
+            <div class="label">İzinli</div>
+          </div>
+        </div>
+      `;
+
+      statsContainer.style.display = recorded > 0 ? 'block' : 'none';
     }
 
     async function saveStatus(select, date) {
       const studentId = select.dataset.id;
       const status = select.value;
-      if (!status) return;
+      
+      if (!status) {
+        select.className = 'status-select';
+        return;
+      }
 
-      const res = await fetch('/attendance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId, date, status })
-      });
+      const originalValue = select.dataset.original || '';
+      select.disabled = true;
 
-      const result = await res.json();
-      if (!res.ok) {
-        alert(result.error || 'Kayıt başarısız.');
-        select.value = ''; // Geri al
-      } else {
-        alert('Yoklama kaydedildi.');
+      try {
+        const res = await fetch('/attendance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentId, date, status })
+        });
+
+        const result = await res.json();
+
+        if (!res.ok) {
+          throw new Error(result.error || 'Kayıt başarısız.');
+        }
+
+        select.className = `status-select ${status}`;
+        select.dataset.original = status;
+        
+        // İstatistikleri güncelle
+        const student = currentStudents.find(s => s.id == studentId);
+        if (student) {
+          student.status = status;
+          displayStats(currentStudents);
+        }
+
+        showToast('✓ Yoklama kaydedildi', 'success');
+      } catch (error) {
+        showToast('✗ ' + error.message, 'error');
+        select.value = originalValue;
+        select.className = `status-select ${originalValue}`;
+      } finally {
+        select.disabled = false;
       }
     }
+
+    function showLoading() {
+      attendanceList.innerHTML = `
+        <div class="loading">
+          <div class="spinner"></div>
+          <p>Yükleniyor...</p>
+        </div>
+      `;
+      statsContainer.style.display = 'none';
+    }
+
+    function showMessage(message, type = 'info') {
+      attendanceList.innerHTML = `
+        <div class="info-box ${type}">
+          ${message}
+        </div>
+      `;
+      statsContainer.style.display = 'none';
+    }
+
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 15px 25px;
+        background: ${type === 'success' ? '#28a745' : '#dc3545'};
+        color: white;
+        border-radius: 8px;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        z-index: 9999;
+        animation: slideIn 0.3s ease;
+      `;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    function formatDate(dateStr) {
+      const date = new Date(dateStr + 'T00:00:00');
+      return date.toLocaleDateString('tr-TR', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    }
+
+    // CSS animasyonları
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes slideIn {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      @keyframes slideOut {
+        from {
+          transform: translateX(0);
+          opacity: 1;
+        }
+        to {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
   </script>
 </body>
 </html>
