@@ -1,7 +1,13 @@
 import { Pool } from 'pg';
 
+const connectionString =
+  process.env.NEON_DATABASE_URL ||
+  process.env.NETLIFY_DATABASE_URL ||
+  process.env.DATABASE_URL ||
+  '';
+
 const pool = new Pool({
-  connectionString: process.env.NEON_DATABASE_URL,
+  connectionString,
   ssl:
     process.env.NEON_SSL_DISABLED === 'true'
       ? false
@@ -28,11 +34,14 @@ export async function handler(event) {
     return { statusCode: 200, headers: corsHeaders };
   }
 
-  if (!process.env.NEON_DATABASE_URL) {
+  if (!connectionString) {
     return {
       statusCode: 500,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'NEON_DATABASE_URL tanımlı değil.' })
+      body: JSON.stringify({
+        error:
+          'Neon bağlantı adresi tanımlı değil. NEON_DATABASE_URL veya NETLIFY_DATABASE_URL ortam değişkenini ekleyin.'
+      })
     };
   }
 

@@ -1,133 +1,542 @@
-import React, { useState, useEffect } from 'react';
-import { Check, X, AlertCircle, Calendar, Users, Save, Download, Trash2 } from 'lucide-react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
+import {
+  AlertCircle,
+  Calendar,
+  Check,
+  Download,
+  Loader2,
+  RefreshCw,
+  Save,
+  Users,
+  X
+} from 'lucide-react';
+import { fetchAllStudents } from './api/students';
+
+const STORAGE_KEY = 'ata-akademi-data';
+const STATUS_OPTIONS = ['geldi', 'gelmedi', 'mazeretli', 'izinli'];
+const DAY_NAMES = ['pazar', 'pazartesi', 'salı', 'çarşamba', 'perşembe', 'cuma', 'cumartesi'];
+
+const CLASS_ORDER = {
+  TYT: 0,
+  '9': 1,
+  '10': 2,
+  '11': 3,
+  '12': 4,
+  MEZUN: 5
+};
+
+const CLASS_PRESETS = {
+  'TYT::': {
+    name: 'TYT Sınıfı',
+    schedule: { cumartesi: 6, pazar: 4 },
+    absenceLimits: { excused: 20, unexcused: 20, total: 40 }
+  },
+  '9::': { name: '9. Sınıf', schedule: { cumartesi: 4, pazar: 4 } },
+  '10::': { name: '10. Sınıf', schedule: { salı: 4, perşembe: 4 } },
+  '10::A': { name: '10. Sınıf A', schedule: { salı: 4, perşembe: 4 } },
+  '10::B': { name: '10. Sınıf B', schedule: { salı: 4, perşembe: 4 } },
+  '11::SAY1': { name: '11 Say 1' },
+  '11::SAY2': { name: '11 Say 2' },
+  '11::EA1': { name: '11 Ea 1' },
+  '11::EA2': { name: '11 Ea 2' },
+  '11::TYT': { name: '11 TYT', schedule: { cumartesi: 6, pazar: 4 } },
+  '12::': {
+    name: '12. Sınıf',
+    schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 }
+  },
+  '12::EA1': {
+    name: '12 Ea 1',
+    schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 }
+  },
+  '12::EA2': {
+    name: '12 Ea 2',
+    schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 }
+  },
+  '12::EA3': {
+    name: '12 Ea 3',
+    schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 }
+  },
+  '12::SAY1': {
+    name: '12 Say 1',
+    schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 }
+  },
+  '12::SAY2': {
+    name: '12 Say 2',
+    schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 }
+  },
+  '12::SAY3': {
+    name: '12 Say 3',
+    schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 }
+  },
+  '12::TYT': {
+    name: '12 TYT',
+    schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 }
+  },
+  'MEZUN::': {
+    name: 'Mezun',
+    schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 },
+    absenceLimits: { excused: 20, unexcused: 20, total: 40 }
+  },
+  'MEZUN::MEA1': {
+    name: 'Mezun Ea 1',
+    schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 },
+    absenceLimits: { excused: 20, unexcused: 20, total: 40 }
+  },
+  'MEZUN::MEA2': {
+    name: 'Mezun Ea 2',
+    schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 },
+    absenceLimits: { excused: 20, unexcused: 20, total: 40 }
+  },
+  'MEZUN::MEA3': {
+    name: 'Mezun Ea 3',
+    schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 },
+    absenceLimits: { excused: 20, unexcused: 20, total: 40 }
+  },
+  'MEZUN::MSAY1': {
+    name: 'Mezun Say 1',
+    schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 },
+    absenceLimits: { excused: 20, unexcused: 20, total: 40 }
+  },
+  'MEZUN::MSAY2': {
+    name: 'Mezun Say 2',
+    schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 },
+    absenceLimits: { excused: 20, unexcused: 20, total: 40 }
+  },
+  'MEZUN::MSAY3': {
+    name: 'Mezun Say 3',
+    schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 },
+    absenceLimits: { excused: 20, unexcused: 20, total: 40 }
+  },
+  'MEZUN::TYT': {
+    name: 'Mezun TYT',
+    schedule: { cumartesi: 6, pazar: 4 },
+    absenceLimits: { excused: 20, unexcused: 20, total: 40 }
+  }
+};
+
+const normalizeText = (value = '') => String(value ?? '').trim();
+const normalizeGrade = (value = '') => normalizeText(value).toUpperCase();
+const normalizeSection = (value = '') => {
+  const normalized = normalizeText(value).toUpperCase();
+  if (!normalized || normalized === 'NAN') {
+    return '';
+  }
+  return normalized;
+};
+
+const buildClassKey = (grade, section) => `${grade || 'GENEL'}::${section || ''}`;
+
+const formatClassLabel = (grade, section) => {
+  const rawGrade = grade ? grade.toString() : '';
+  const rawSection = section ? section.toString() : '';
+  const upperGrade = rawGrade.toUpperCase();
+
+  if (!rawGrade) {
+    return rawSection ? `Genel ${rawSection}` : 'Genel';
+  }
+
+  if (/^[0-9]+$/.test(rawGrade)) {
+    return rawSection ? `${rawGrade}. Sınıf ${rawSection}` : `${rawGrade}. Sınıf`;
+  }
+
+  if (upperGrade === 'MEZUN') {
+    return rawSection ? `Mezun ${rawSection}` : 'Mezun';
+  }
+
+  if (upperGrade === 'TYT') {
+    return rawSection ? `TYT ${rawSection}` : 'TYT Sınıfı';
+  }
+
+  return rawSection ? `${rawGrade} ${rawSection}` : rawGrade;
+};
+
+const getDefaultAbsenceLimit = (grade) => {
+  const upper = (grade || '').toUpperCase();
+  if (upper === '12' || upper === 'MEZUN' || upper === 'TYT') {
+    return { excused: 20, unexcused: 20, total: 40 };
+  }
+  return { excused: 10, unexcused: 10, total: 20 };
+};
+
+const resolveClassMeta = (grade, section) => {
+  const key = buildClassKey(grade, section);
+  const preset =
+    CLASS_PRESETS[key] ||
+    CLASS_PRESETS[buildClassKey(grade, '')] ||
+    CLASS_PRESETS[buildClassKey('', section)] ||
+    {};
+
+  return {
+    classKey: key,
+    grade,
+    section,
+    name: preset.name || formatClassLabel(grade, section),
+    schedule: preset.schedule || {},
+    absenceLimits: preset.absenceLimits || getDefaultAbsenceLimit(grade)
+  };
+};
+
+const createStudentRecord = (student, index) => {
+  const grade = normalizeGrade(student.sinif || '');
+  const section = normalizeSection(student.sube || '');
+  const classKey = buildClassKey(grade, section);
+  const identifier =
+    student.id !== undefined && student.id !== null
+      ? `db-${student.id}`
+      : `${classKey}-${normalizeText(student.ad)}-${normalizeText(student.soyad)}-${index}`;
+
+  return {
+    ...student,
+    grade,
+    section,
+    classKey,
+    dbId: identifier,
+    fullName: [normalizeText(student.ad), normalizeText(student.soyad)]
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+  };
+};
+
+const describeStudentLoadError = (error) => {
+  if (!error) {
+    return 'Öğrenci verileri yüklenirken bir sorun oluştu.';
+  }
+
+  const details = [
+    typeof error?.payload?.error === 'string' ? error.payload.error : '',
+    typeof error?.message === 'string' ? error.message : '',
+    typeof error?.rawBody === 'string' ? error.rawBody : ''
+  ]
+    .map((value) => value.toLowerCase())
+    .filter(Boolean);
+
+  const includes = (needle) => details.some((value) => value.includes(needle));
+
+  if (includes('neon_database_url')) {
+    return 'Öğrenci verileri yüklenemedi çünkü NEON_DATABASE_URL tanımlı değil. Netlify ayarlarındaki ortam değişkenini güncelleyip tekrar deneyin.';
+  }
+
+  if (includes('failed to fetch') || includes('networkerror')) {
+    return 'Öğrenci verileri yüklenemedi. İnternet bağlantınızı ve VITE_STUDENTS_API / Netlify yapılandırmanızı kontrol edin.';
+  }
+
+  if (typeof error?.status === 'number') {
+    return `Öğrenci verileri yüklenemedi (HTTP ${error.status}). Sunucu yanıtını kontrol edip tekrar deneyin.`;
+  }
+
+  return 'Öğrenci verileri yüklenirken bir sorun oluştu.';
+};
+
+const getStatusColor = (status) => {
+  const colors = {
+    geldi: 'bg-green-500 hover:bg-green-600',
+    gelmedi: 'bg-red-500 hover:bg-red-600',
+    mazeretli: 'bg-yellow-500 hover:bg-yellow-600',
+    izinli: 'bg-blue-500 hover:bg-blue-600'
+  };
+  return colors[status] || 'bg-gray-300 hover:bg-gray-400';
+};
+
+const getStatusIcon = (status) => {
+  const icons = {
+    geldi: <Check className="w-4 h-4" />,
+    gelmedi: <X className="w-4 h-4" />,
+    mazeretli: <AlertCircle className="w-4 h-4" />,
+    izinli: <Calendar className="w-4 h-4" />
+  };
+  return icons[status] || null;
+};
 
 const AttendanceSystem = () => {
-  const [classes] = useState([
-    { id: 'tyt', name: 'TYT Sınıfı', schedule: { cumartesi: 6, pazar: 4 } },
-    { id: '9', name: '9. Sınıf', schedule: { cumartesi: 4, pazar: 4 } },
-    { id: '10', name: '10. Sınıf', schedule: { salı: 4, perşembe: 4 } },
-    { id: '11-say-1', name: '11 Say 1', schedule: {} },
-    { id: '11-say-2', name: '11 Say 2', schedule: {} },
-    { id: '11-ea-1', name: '11 Ea 1', schedule: {} },
-    { id: '11-ea-2', name: '11 Ea 2', schedule: {} },
-    { id: '12-say-1', name: '12 Say 1', schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 } },
-    { id: '12-say-2', name: '12 Say 2', schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 } },
-    { id: '12-say-3', name: '12 Say 3', schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 } },
-    { id: '12-ea-1', name: '12 Ea 1', schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 } },
-    { id: '12-ea-2', name: '12 Ea 2', schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 } },
-    { id: '12-ea-3', name: '12 Ea 3', schedule: { salı: 4, perşembe: 4, cumartesi: 6, pazar: 6 } },
-    { id: 'mezun-ea-1', name: 'Mezun Ea 1', schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 } },
-    { id: 'mezun-ea-2', name: 'Mezun Ea 2', schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 } },
-    { id: 'mezun-ea-3', name: 'Mezun Ea 3', schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 } },
-    { id: 'mezun-say-1', name: 'Mezun Say 1', schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 } },
-    { id: 'mezun-say-2', name: 'Mezun Say 2', schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 } },
-    { id: 'mezun-say-3', name: 'Mezun Say 3', schedule: { pazartesi: 6, salı: 6, perşembe: 6, cuma: 6 } }
-  ]);
-
-  const [students, setStudents] = useState({});
-  const [selectedClass, setSelectedClass] = useState('');
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [selectedClassKey, setSelectedClassKey] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [attendance, setAttendance] = useState({});
   const [savedRecords, setSavedRecords] = useState({});
-  const [message, setMessage] = useState({ type: '', text: '' });
-  const [activeTab, setActiveTab] = useState('yoklama');
-  const [newStudentName, setNewStudentName] = useState('');
+  const [activeTab, setActiveTab] = useState('attendance');
+  const [message, setMessage] = useState(null);
+  const controllerRef = useRef(null);
 
-  useEffect(() => {
-    const stored = localStorage.getItem('ata-akademi-data');
-    if (stored) {
-      const data = JSON.parse(stored);
-      setStudents(data.students || {});
-      setSavedRecords(data.records || {});
+  const persistRecords = useCallback((records) => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          records
+        })
+      );
+    } catch (error) {
+      console.warn('Yerel kayıtlar kaydedilemedi', error);
+    }
+  }, []);
+
+  const loadStudents = useCallback(async () => {
+    if (controllerRef.current) {
+      controllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    controllerRef.current = controller;
+
+    setLoading(true);
+    setLoadError('');
+
+    try {
+      const { rows } = await fetchAllStudents({ signal: controller.signal });
+      if (!controller.signal.aborted) {
+        setStudents(rows.map((student, index) => createStudentRecord(student, index)));
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        return;
+      }
+      console.error('Öğrenci verileri alınamadı', error);
+      setLoadError(describeStudentLoadError(error));
+    } finally {
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    if (selectedClass && selectedDate) {
-      const key = `${selectedClass}-${selectedDate}`;
-      const record = savedRecords[key];
-      if (record) {
-        setAttendance(record);
-        setMessage({ type: 'info', text: 'Bu tarih için kayıtlı yoklama yüklendi.' });
-      } else {
-        setAttendance({});
-        setMessage({ type: '', text: '' });
+    loadStudents();
+    return () => {
+      if (controllerRef.current) {
+        controllerRef.current.abort();
       }
+    };
+  }, [loadStudents]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (!stored) return;
+
+    try {
+      const parsed = JSON.parse(stored);
+      const records = parsed.records || {};
+      const hasNewFormat = Object.keys(records).some((key) => key.includes('::'));
+      setSavedRecords(hasNewFormat ? records : {});
+    } catch (error) {
+      console.warn('Yerel kayıtlar okunamadı', error);
     }
-  }, [selectedClass, selectedDate, savedRecords]);
+  }, []);
 
-  const saveToStorage = (studentsData, recordsData) => {
-    localStorage.setItem('ata-akademi-data', JSON.stringify({
-      students: studentsData,
-      records: recordsData
-    }));
-  };
+  const classMetaMap = useMemo(() => {
+    const map = new Map();
+    students.forEach((student) => {
+      if (!map.has(student.classKey)) {
+        map.set(student.classKey, resolveClassMeta(student.grade, student.section));
+      }
+    });
+    return map;
+  }, [students]);
 
-  const getLessonCount = () => {
-    const cls = classes.find(c => c.id === selectedClass);
-    if (!cls) return 0;
-    const date = new Date(selectedDate + 'T00:00:00');
-    const dayNames = ['pazar', 'pazartesi', 'salı', 'çarşamba', 'perşembe', 'cuma', 'cumartesi'];
-    return cls.schedule[dayNames[date.getDay()]] || 0;
-  };
+  const classMetaList = useMemo(() => {
+    const metas = Array.from(classMetaMap.values());
+    metas.sort((a, b) => {
+      const orderA = CLASS_ORDER[a.grade] ?? 99;
+      const orderB = CLASS_ORDER[b.grade] ?? 99;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.name.localeCompare(b.name, 'tr');
+    });
+    return metas;
+  }, [classMetaMap]);
 
-  const handleAttendanceChange = (studentId, lessonNumber, status) => {
-    setAttendance(prev => ({
-      ...prev,
-      [`${studentId}-${lessonNumber}`]: status
-    }));
-  };
-
-  const saveAttendance = () => {
-    const key = `${selectedClass}-${selectedDate}`;
-    const lessonCount = getLessonCount();
-    
-    if (lessonCount === 0) {
-      setMessage({ type: 'error', text: 'Bu sınıfın bu gün için ders programı yok!' });
+  useEffect(() => {
+    if (classMetaList.length === 0) {
+      setSelectedClassKey('');
       return;
     }
 
-    const newRecords = { ...savedRecords, [key]: { ...attendance } };
-    setSavedRecords(newRecords);
-    saveToStorage(students, newRecords);
-    setMessage({ type: 'success', text: 'Yoklama kaydedildi!' });
-  };
+    if (!selectedClassKey || !classMetaMap.has(selectedClassKey)) {
+      setSelectedClassKey(classMetaList[0].classKey);
+    }
+  }, [classMetaList, classMetaMap, selectedClassKey]);
 
-  const addStudent = () => {
-    if (!newStudentName.trim() || !selectedClass) return;
-    const newStudents = { ...students };
-    if (!newStudents[selectedClass]) newStudents[selectedClass] = [];
-    newStudents[selectedClass].push({
-      id: `${selectedClass}-${Date.now()}`,
-      name: newStudentName.trim()
+  const selectedClassMeta = useMemo(() => {
+    if (!selectedClassKey) return null;
+    return classMetaMap.get(selectedClassKey) || null;
+  }, [classMetaMap, selectedClassKey]);
+
+  const classStudents = useMemo(() => {
+    if (!selectedClassKey) return [];
+    return students.filter((student) => student.classKey === selectedClassKey);
+  }, [students, selectedClassKey]);
+
+  useEffect(() => {
+    if (!selectedClassKey || !selectedDate) {
+      setAttendance({});
+      setMessage(null);
+      return;
+    }
+
+    const key = `${selectedClassKey}-${selectedDate}`;
+    const record = savedRecords[key];
+    if (record) {
+      setAttendance({ ...record });
+      setMessage({ type: 'info', text: 'Bu tarih için kayıtlı yoklama yüklendi.' });
+    } else {
+      setAttendance({});
+      setMessage(null);
+    }
+  }, [selectedClassKey, selectedDate, savedRecords]);
+
+  const lessonCount = useMemo(() => {
+    if (!selectedClassMeta || !selectedDate) return 0;
+    const date = new Date(`${selectedDate}T00:00:00`);
+    const dayName = DAY_NAMES[date.getDay()];
+    return selectedClassMeta.schedule[dayName] || 0;
+  }, [selectedClassMeta, selectedDate]);
+
+  const getAbsenceLimit = useCallback(
+    (classKey) => {
+      const meta = classMetaMap.get(classKey);
+      if (meta) return meta.absenceLimits;
+      const [gradePart] = (classKey || '').split('::');
+      return getDefaultAbsenceLimit(gradePart || '');
+    },
+    [classMetaMap]
+  );
+
+  const handleAttendanceChange = useCallback((studentId, lessonNumber, status) => {
+    setAttendance((prev) => ({
+      ...prev,
+      [`${studentId}-${lessonNumber}`]: status
+    }));
+  }, []);
+
+  const saveAttendance = useCallback(() => {
+    if (!selectedClassMeta) {
+      setMessage({ type: 'error', text: 'Lütfen önce bir sınıf seçin.' });
+      return;
+    }
+
+    if (lessonCount === 0) {
+      setMessage({ type: 'error', text: 'Bu gün için ders programı bulunmuyor.' });
+      return;
+    }
+
+    const key = `${selectedClassMeta.classKey}-${selectedDate}`;
+    setSavedRecords((prev) => {
+      const next = { ...prev, [key]: { ...attendance } };
+      persistRecords(next);
+      return next;
     });
-    setStudents(newStudents);
-    saveToStorage(newStudents, savedRecords);
-    setNewStudentName('');
-    setMessage({ type: 'success', text: 'Öğrenci eklendi!' });
-  };
+    setMessage({ type: 'success', text: 'Yoklama kaydedildi!' });
+  }, [attendance, lessonCount, persistRecords, selectedClassMeta, selectedDate]);
 
-  const removeStudent = (studentId) => {
-    if (!confirm('Bu öğrenciyi silmek istediğinizden emin misiniz?')) return;
-    const newStudents = { ...students };
-    newStudents[selectedClass] = newStudents[selectedClass].filter(s => s.id !== studentId);
-    setStudents(newStudents);
-    saveToStorage(newStudents, savedRecords);
-    setMessage({ type: 'success', text: 'Öğrenci silindi!' });
-  };
+  const calculateStudentStats = useCallback(
+    (studentId, classKey) => {
+      let totalLessons = 0;
+      let attended = 0;
+      let absent = 0;
+      let excused = 0;
+      let onLeave = 0;
 
-  const downloadCSV = () => {
-    const classStudents = students[selectedClass] || [];
-    const className = classes.find(c => c.id === selectedClass)?.name || selectedClass;
-    const lessonCount = getLessonCount();
-    
+      Object.entries(savedRecords).forEach(([recordKey, record]) => {
+        if (!recordKey.startsWith(`${classKey}-`)) return;
+        Object.entries(record).forEach(([key, status]) => {
+          if (!key.startsWith(`${studentId}-`)) return;
+          totalLessons += 1;
+          if (status === 'geldi') attended += 1;
+          else if (status === 'gelmedi') absent += 1;
+          else if (status === 'mazeretli') excused += 1;
+          else if (status === 'izinli') onLeave += 1;
+        });
+      });
+
+      const attendanceRate = totalLessons > 0 ? (attended / totalLessons) * 100 : 0;
+      return { totalLessons, attended, absent, excused, onLeave, attendanceRate };
+    },
+    [savedRecords]
+  );
+
+  const calculateClassStats = useCallback(
+    (classKey) => {
+      const relevantStudents = students.filter((student) => student.classKey === classKey);
+      if (!relevantStudents.length) return null;
+
+      let totalAttendance = 0;
+      let countedStudents = 0;
+
+      relevantStudents.forEach((student) => {
+        const stats = calculateStudentStats(student.dbId, classKey);
+        if (stats.totalLessons > 0) {
+          totalAttendance += stats.attendanceRate;
+          countedStudents += 1;
+        }
+      });
+
+      return countedStudents > 0 ? totalAttendance / countedStudents : 0;
+    },
+    [calculateStudentStats, students]
+  );
+
+  const getStudentStatus = useCallback(
+    (studentId, classKey) => {
+      const stats = calculateStudentStats(studentId, classKey);
+      const limits = getAbsenceLimit(classKey);
+      const totalAbsences = stats.absent + stats.excused;
+
+      if (
+        stats.absent >= limits.unexcused ||
+        stats.excused >= limits.excused ||
+        totalAbsences >= limits.total
+      ) {
+        return {
+          status: 'critical',
+          color: 'bg-red-100 border-red-500',
+          textColor: 'text-red-800'
+        };
+      }
+
+      if (
+        stats.absent >= limits.unexcused * 0.8 ||
+        stats.excused >= limits.excused * 0.8 ||
+        totalAbsences >= limits.total * 0.8
+      ) {
+        return {
+          status: 'warning',
+          color: 'bg-yellow-100 border-yellow-500',
+          textColor: 'text-yellow-800'
+        };
+      }
+
+      return {
+        status: 'normal',
+        color: 'bg-green-50 border-green-200',
+        textColor: 'text-green-800'
+      };
+    },
+    [calculateStudentStats, getAbsenceLimit]
+  );
+
+  const downloadCSV = useCallback(() => {
+    if (!selectedClassMeta) return;
+    const lessonTotal = lessonCount;
+    const className = selectedClassMeta.name || selectedClassMeta.classKey;
+
     let csv = `Sınıf:,${className}\nTarih:,${selectedDate}\n\n`;
-    csv += 'Öğrenci Adı,' + Array.from({ length: lessonCount }, (_, i) => `${i + 1}. Ders`).join(',') + '\n';
-    
-    classStudents.forEach(student => {
-      const row = [student.name];
-      for (let i = 1; i <= lessonCount; i++) {
-        row.push(attendance[`${student.id}-${i}`] || '-');
+    csv += 'Öğrenci Adı,' +
+      Array.from({ length: lessonTotal }, (_, i) => `${i + 1}. Ders`).join(',') +
+      '\n';
+
+    classStudents.forEach((student) => {
+      const row = [student.fullName];
+      for (let i = 1; i <= lessonTotal; i += 1) {
+        row.push(attendance[`${student.dbId}-${i}`] || '-');
       }
       csv += row.join(',') + '\n';
     });
@@ -135,91 +544,13 @@ const AttendanceSystem = () => {
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `Yoklama_${className}_${selectedDate}.csv`;
+    link.download = `Yoklama_${className.replace(/\s+/g, '_')}_${selectedDate}.csv`;
     link.click();
-  };
+  }, [attendance, classStudents, lessonCount, selectedClassMeta, selectedDate]);
 
-  const getAbsenceLimit = (classId) => {
-    if (classId.startsWith('12-') || classId.startsWith('mezun-')) {
-      return { excused: 20, unexcused: 20, total: 40 };
-    }
-    return { excused: 10, unexcused: 10, total: 20 };
-  };
-
-  const calculateStudentStats = (studentId, classId) => {
-    let totalLessons = 0, attended = 0, absent = 0, excused = 0, onLeave = 0;
-
-    Object.keys(savedRecords).forEach(recordKey => {
-      if (recordKey.startsWith(classId)) {
-        const record = savedRecords[recordKey];
-        Object.keys(record).forEach(key => {
-          if (key.startsWith(studentId)) {
-            totalLessons++;
-            const status = record[key];
-            if (status === 'geldi') attended++;
-            else if (status === 'gelmedi') absent++;
-            else if (status === 'mazeretli') excused++;
-            else if (status === 'izinli') onLeave++;
-          }
-        });
-      }
-    });
-
-    const attendanceRate = totalLessons > 0 ? (attended / totalLessons) * 100 : 0;
-    return { totalLessons, attended, absent, excused, onLeave, attendanceRate };
-  };
-
-  const calculateClassStats = (classId) => {
-    const classStudents = students[classId] || [];
-    if (classStudents.length === 0) return null;
-
-    let totalAttendance = 0, studentCount = 0;
-    classStudents.forEach(student => {
-      const stats = calculateStudentStats(student.id, classId);
-      if (stats.totalLessons > 0) {
-        totalAttendance += stats.attendanceRate;
-        studentCount++;
-      }
-    });
-    return studentCount > 0 ? totalAttendance / studentCount : 0;
-  };
-
-  const getStudentStatus = (studentId, classId) => {
-    const stats = calculateStudentStats(studentId, classId);
-    const limits = getAbsenceLimit(classId);
-    const totalAbsences = stats.absent + stats.excused;
-
-    if (stats.absent >= limits.unexcused || stats.excused >= limits.excused || totalAbsences >= limits.total) {
-      return { status: 'critical', color: 'bg-red-100 border-red-500', textColor: 'text-red-800' };
-    }
-    if (stats.absent >= limits.unexcused * 0.8 || stats.excused >= limits.excused * 0.8 || totalAbsences >= limits.total * 0.8) {
-      return { status: 'warning', color: 'bg-yellow-100 border-yellow-500', textColor: 'text-yellow-800' };
-    }
-    return { status: 'normal', color: 'bg-green-50 border-green-200', textColor: 'text-green-800' };
-  };
-
-  const getStatusColor = (status) => {
-    const colors = {
-      'geldi': 'bg-green-500 hover:bg-green-600',
-      'gelmedi': 'bg-red-500 hover:bg-red-600',
-      'mazeretli': 'bg-yellow-500 hover:bg-yellow-600',
-      'izinli': 'bg-blue-500 hover:bg-blue-600'
-    };
-    return colors[status] || 'bg-gray-300 hover:bg-gray-400';
-  };
-
-  const getStatusIcon = (status) => {
-    const icons = {
-      'geldi': <Check className="w-4 h-4" />,
-      'gelmedi': <X className="w-4 h-4" />,
-      'mazeretli': <AlertCircle className="w-4 h-4" />,
-      'izinli': <Calendar className="w-4 h-4" />
-    };
-    return icons[status] || null;
-  };
-
-  const classStudents = students[selectedClass] || [];
-  const lessonCount = getLessonCount();
+  const handleRefresh = useCallback(() => {
+    loadStudents();
+  }, [loadStudents]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -231,142 +562,205 @@ const AttendanceSystem = () => {
           </div>
 
           <div className="flex gap-4 mb-6 border-b">
-            {['yoklama', 'raporlar', 'yukle'].map(tab => (
+            {[
+              { key: 'attendance', label: 'Yoklama Gir' },
+              { key: 'reports', label: 'Raporlar' },
+              { key: 'students', label: 'Öğrenciler' }
+            ].map((tab) => (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
                 className={`px-4 py-2 font-medium transition-colors ${
-                  activeTab === tab
+                  activeTab === tab.key
                     ? 'text-indigo-600 border-b-2 border-indigo-600'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                {tab === 'yoklama' ? 'Yoklama Gir' : tab === 'raporlar' ? 'Raporlar' : 'Öğrenci Yönetimi'}
+                {tab.label}
               </button>
             ))}
           </div>
 
-          {message.text && (
-            <div className={`p-4 rounded-lg mb-4 ${
-              message.type === 'success' ? 'bg-green-100 text-green-800' :
-              message.type === 'error' ? 'bg-red-100 text-red-800' :
-              message.type === 'warning' ? 'bg-yellow-100 text-yellow-800' :
-              'bg-blue-100 text-blue-800'
-            }`}>
+          {message && (
+            <div
+              className={`p-4 rounded-lg mb-4 ${
+                message.type === 'success'
+                  ? 'bg-green-100 text-green-800'
+                  : message.type === 'error'
+                  ? 'bg-red-100 text-red-800'
+                  : 'bg-blue-100 text-blue-800'
+              }`}
+            >
               {message.text}
             </div>
           )}
 
+          {loadError && (
+            <div className="p-4 rounded-lg mb-4 bg-red-100 text-red-700">{loadError}</div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Sınıf Seçin</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Sınıf Seçin
+              </label>
               <select
-                value={selectedClass}
-                onChange={(e) => setSelectedClass(e.target.value)}
+                value={selectedClassKey}
+                onChange={(event) => setSelectedClassKey(event.target.value)}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">Sınıf seçiniz...</option>
-                {classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
+                {classMetaList.map((meta) => (
+                  <option key={meta.classKey} value={meta.classKey}>
+                    {meta.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Tarih Seçin</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Tarih Seçin
+              </label>
               <input
                 type="date"
                 value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
+                onChange={(event) => setSelectedDate(event.target.value)}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
               />
             </div>
           </div>
 
-          {activeTab === 'yoklama' && selectedClass && classStudents.length > 0 && lessonCount > 0 && (
-            <div>
-              <div className="mb-4 p-4 bg-indigo-50 rounded-lg flex justify-between items-center">
-                <p className="text-sm font-medium text-indigo-800">
-                  {classStudents.length} öğrenci • {lessonCount} ders
-                </p>
-                <button onClick={downloadCSV} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">
-                  <Download className="w-4 h-4" /> CSV İndir
-                </button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-gray-50">
-                      <th className="p-3 text-left font-semibold text-gray-700 border">Öğrenci Adı</th>
-                      {Array.from({ length: lessonCount }, (_, i) => (
-                        <th key={i} className="p-3 text-center font-semibold text-gray-700 border">{i + 1}. Ders</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {classStudents.map(student => (
-                      <tr key={student.id} className="hover:bg-gray-50">
-                        <td className="p-3 font-medium text-gray-800 border">{student.name}</td>
-                        {Array.from({ length: lessonCount }, (_, i) => {
-                          const key = `${student.id}-${i + 1}`;
-                          const currentStatus = attendance[key] || '';
-                          return (
-                            <td key={i} className="p-2 border">
-                              <div className="flex gap-1 justify-center">
-                                {['geldi', 'gelmedi', 'mazeretli', 'izinli'].map(status => (
-                                  <button
-                                    key={status}
-                                    onClick={() => handleAttendanceChange(student.id, i + 1, status)}
-                                    className={`p-2 rounded transition-all ${
-                                      currentStatus === status
-                                        ? getStatusColor(status) + ' text-white'
-                                        : 'bg-gray-100 text-gray-400'
-                                    }`}
-                                  >
-                                    {getStatusIcon(status)}
-                                  </button>
-                                ))}
-                              </div>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <button
-                onClick={saveAttendance}
-                className="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2"
-              >
-                <Save className="w-5 h-5" /> Yoklamayı Kaydet
-              </button>
+          {loading && (
+            <div className="flex items-center gap-2 text-indigo-600 mb-4">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Öğrenci verileri yükleniyor...</span>
             </div>
           )}
 
-          {activeTab === 'raporlar' && (
+          {activeTab === 'attendance' &&
+            selectedClassMeta &&
+            classStudents.length > 0 &&
+            lessonCount > 0 && (
+              <div>
+                <div className="mb-4 p-4 bg-indigo-50 rounded-lg flex justify-between items-center">
+                  <p className="text-sm font-medium text-indigo-800">
+                    {classStudents.length} öğrenci • {lessonCount} ders
+                  </p>
+                  <button
+                    type="button"
+                    onClick={downloadCSV}
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm"
+                  >
+                    <Download className="w-4 h-4" /> CSV İndir
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="p-3 text-left font-semibold text-gray-700 border">
+                          Öğrenci Adı
+                        </th>
+                        {Array.from({ length: lessonCount }, (_, index) => (
+                          <th
+                            key={index}
+                            className="p-3 text-center font-semibold text-gray-700 border"
+                          >
+                            {index + 1}. Ders
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {classStudents.map((student) => (
+                        <tr key={student.dbId} className="hover:bg-gray-50">
+                          <td className="p-3 font-medium text-gray-800 border">
+                            {student.fullName}
+                          </td>
+                          {Array.from({ length: lessonCount }, (_, index) => {
+                            const key = `${student.dbId}-${index + 1}`;
+                            const currentStatus = attendance[key] || '';
+                            return (
+                              <td key={index} className="p-2 border">
+                                <div className="flex gap-1 justify-center">
+                                  {STATUS_OPTIONS.map((status) => (
+                                    <button
+                                      key={status}
+                                      type="button"
+                                      onClick={() =>
+                                        handleAttendanceChange(student.dbId, index + 1, status)
+                                      }
+                                      className={`p-2 rounded transition-all ${
+                                        currentStatus === status
+                                          ? `${getStatusColor(status)} text-white`
+                                          : 'bg-gray-100 text-gray-400'
+                                      }`}
+                                    >
+                                      {getStatusIcon(status)}
+                                    </button>
+                                  ))}
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={saveAttendance}
+                  className="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2"
+                >
+                  <Save className="w-5 h-5" /> Yoklamayı Kaydet
+                </button>
+              </div>
+            )}
+
+          {activeTab === 'attendance' && selectedClassMeta && lessonCount === 0 && (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700">
+              Seçilen sınıfın bu gün için ders programı bulunmuyor.
+            </div>
+          )}
+
+          {activeTab === 'attendance' && selectedClassMeta && classStudents.length === 0 && (
+            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-gray-600">
+              Bu sınıf için kayıtlı öğrenci bulunamadı.
+            </div>
+          )}
+
+          {activeTab === 'reports' && (
             <div>
               <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-                <strong>Devamsızlık Hakları:</strong> 9-10-11: 10+10 | 12-Mezun: 20+20 <strong>| Sıfırlama:</strong> 16 Ocak 2026
+                <strong>Devamsızlık Hakları:</strong> 9-10-11: 10+10 | 12-Mezun-TYT: 20+20{' '}
+                <strong>Sıfırlama:</strong> 16 Ocak 2026
               </div>
 
               <h2 className="text-xl font-bold mb-4">Sınıf Devamlılık İstatistikleri</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                {classes.map(cls => {
-                  const stats = calculateClassStats(cls.id);
+                {classMetaList.map((meta) => {
+                  const stats = calculateClassStats(meta.classKey);
                   if (stats === null) return null;
                   return (
-                    <div key={cls.id} className="bg-white border rounded-lg p-4 shadow-sm">
-                      <h3 className="font-semibold text-gray-700 mb-2">{cls.name}</h3>
+                    <div key={meta.classKey} className="bg-white border rounded-lg p-4 shadow-sm">
+                      <h3 className="font-semibold text-gray-700 mb-2">{meta.name}</h3>
                       <div className="text-2xl font-bold text-indigo-600">{stats.toFixed(1)}%</div>
                       <div className="mt-2 bg-gray-200 rounded-full h-2">
-                        <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${Math.min(stats, 100)}%` }} />
+                        <div
+                          className="bg-indigo-600 h-full rounded-full"
+                          style={{ width: `${Math.min(stats, 100)}%` }}
+                        />
                       </div>
                     </div>
                   );
                 })}
               </div>
 
-              {selectedClass && classStudents.length > 0 && (
+              {selectedClassMeta && classStudents.length > 0 && (
                 <div>
                   <h2 className="text-xl font-bold mb-4">Öğrenci Devamsızlık Raporu</h2>
                   <div className="overflow-x-auto">
@@ -383,20 +777,30 @@ const AttendanceSystem = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {classStudents.map(student => {
-                          const stats = calculateStudentStats(student.id, selectedClass);
-                          const statusInfo = getStudentStatus(student.id, selectedClass);
-                          const limits = getAbsenceLimit(selectedClass);
+                        {classStudents.map((student) => {
+                          const stats = calculateStudentStats(student.dbId, selectedClassMeta.classKey);
+                          const statusInfo = getStudentStatus(student.dbId, selectedClassMeta.classKey);
+                          const limits = getAbsenceLimit(selectedClassMeta.classKey);
                           return (
-                            <tr key={student.id} className={`border-l-4 ${statusInfo.color}`}>
-                              <td className="p-2 border">{student.name}</td>
+                            <tr key={student.dbId} className={`border-l-4 ${statusInfo.color}`}>
+                              <td className="p-2 border">{student.fullName}</td>
                               <td className="p-2 text-center border">{stats.totalLessons}</td>
                               <td className="p-2 text-center border text-green-600">{stats.attended}</td>
-                              <td className="p-2 text-center border text-red-600">{stats.absent}/{limits.unexcused}</td>
-                              <td className="p-2 text-center border text-yellow-600">{stats.excused}/{limits.excused}</td>
-                              <td className="p-2 text-center border font-bold">{stats.attendanceRate.toFixed(1)}%</td>
+                              <td className="p-2 text-center border text-red-600">
+                                {stats.absent}/{limits.unexcused}
+                              </td>
+                              <td className="p-2 text-center border text-yellow-600">
+                                {stats.excused}/{limits.excused}
+                              </td>
+                              <td className="p-2 text-center border font-bold">
+                                {stats.attendanceRate.toFixed(1)}%
+                              </td>
                               <td className={`p-2 text-center border ${statusInfo.textColor}`}>
-                                {statusInfo.status === 'critical' ? '🔴' : statusInfo.status === 'warning' ? '⚠️' : '✅'}
+                                {statusInfo.status === 'critical'
+                                  ? '🔴'
+                                  : statusInfo.status === 'warning'
+                                  ? '⚠️'
+                                  : '✅'}
                               </td>
                             </tr>
                           );
@@ -409,38 +813,63 @@ const AttendanceSystem = () => {
             </div>
           )}
 
-          {activeTab === 'yukle' && (
+          {activeTab === 'students' && (
             <div>
-              <div className="flex gap-2 mb-6">
-                <input
-                  type="text"
-                  value={newStudentName}
-                  onChange={(e) => setNewStudentName(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && addStudent()}
-                  placeholder="Öğrenci adı..."
-                  disabled={!selectedClass}
-                  className="flex-1 p-3 border rounded-lg"
-                />
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
+                <div>
+                  <p className="text-sm text-gray-600">Toplam kayıtlı öğrenci: {students.length}</p>
+                  {selectedClassMeta && (
+                    <p className="text-sm text-gray-600">
+                      {selectedClassMeta.name}: {classStudents.length} öğrenci
+                    </p>
+                  )}
+                </div>
                 <button
-                  onClick={addStudent}
-                  disabled={!selectedClass || !newStudentName.trim()}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg disabled:opacity-50"
+                  type="button"
+                  onClick={handleRefresh}
+                  className="inline-flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg"
+                  disabled={loading}
                 >
-                  Ekle
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  Verileri Yenile
                 </button>
               </div>
 
-              {classStudents.length > 0 && (
+              {selectedClassMeta && classStudents.length > 0 ? (
                 <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                  <p className="font-medium mb-2">Kayıtlı Öğrenciler ({classStudents.length}):</p>
-                  {classStudents.map((student, idx) => (
-                    <div key={student.id} className="flex justify-between items-center bg-white p-2 rounded mb-1">
-                      <span className="text-sm">{idx + 1}. {student.name}</span>
-                      <button onClick={() => removeStudent(student.id)} className="text-red-600">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                  <p className="font-medium mb-3">
+                    {selectedClassMeta.name} Öğrencileri ({classStudents.length}):
+                  </p>
+                  {classStudents.map((student, index) => (
+                    <div key={student.dbId} className="bg-white p-3 rounded-lg mb-2 shadow-sm border">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-800">
+                          {index + 1}. {student.fullName}
+                        </span>
+                        <span className="text-xs font-semibold text-indigo-600">
+                          {student.section || 'GENEL'}
+                        </span>
+                      </div>
+                      {Array.isArray(student.iletisim) && student.iletisim.length > 0 ? (
+                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-600">
+                          {student.iletisim.map((contact, contactIndex) => (
+                            <div key={`${student.dbId}-contact-${contactIndex}`}>
+                              <span className="uppercase tracking-wide text-gray-500">
+                                {normalizeText(contact.alan)}:
+                              </span>{' '}
+                              <span>{normalizeText(contact.deger) || '-'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-xs text-gray-500">İletişim bilgisi bulunmuyor.</p>
+                      )}
                     </div>
                   ))}
+                </div>
+              ) : (
+                <div className="p-4 bg-white border rounded-lg text-gray-600">
+                  Seçilen sınıf için öğrenci bulunmuyor.
                 </div>
               )}
             </div>
