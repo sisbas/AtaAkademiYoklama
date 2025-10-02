@@ -32,9 +32,6 @@ netlify dev
 
 `netlify dev` komutu hem Vite geliştirme sunucusunu hem de Netlify Functions katmanını birlikte çalıştırır. Tarayıcınızda [http://localhost:8888](http://localhost:8888) adresini açarak uygulamayı görüntüleyebilirsiniz. Sadece Vite sunucusunu (`npm run dev`) çalıştırmak isterseniz API isteklerini yönlendirecek `VITE_STUDENTS_API` değişkenini sağlamanız gerekir.
 
-### Sorun Giderme
-
-- **"NEON_DATABASE_URL tanımlı değil" hatası**: Netlify fonksiyonu ortam değişkenini görmüyor demektir. Netlify CLI kullanırken `netlify env:set NEON_DATABASE_URL "postgresql://..."` komutu ile değeri girin ya da yerel `.env` dosyanızda aynı değişkeni tanımlayın. Uygulama artık bu durumla karşılaştığında arayüzde ayrıntılı bir uyarı mesajı gösterir.
 
 ## Üretim İçin Derleme
 

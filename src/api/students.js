@@ -70,6 +70,9 @@ async function fetchStudentsPage({
     error.payload = parsedBody;
     error.rawBody = errorText;
     throw error;
+    throw new Error(
+      `Öğrenci verileri alınamadı (HTTP ${response.status}): ${errorText}`
+    );
   }
 
   const payload = await response.json();

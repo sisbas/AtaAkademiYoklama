@@ -307,12 +307,21 @@ const AttendanceSystem = () => {
         }
         console.error('Öğrenci verileri alınamadı', error);
         setLoadError(describeStudentLoadError(error));
+        setLoadError('Öğrenci verileri yüklenirken bir sorun oluştu.');
       } finally {
         setLoadingStudents(false);
       }
     },
     []
   );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadStudents(controller.signal);
+    return () => controller.abort();
+  }, [loadStudents]);
+
+  useEffect(() => {
 
   useEffect(() => {
     const controller = new AbortController();
