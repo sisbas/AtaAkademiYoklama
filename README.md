@@ -4,7 +4,7 @@ Ata Akademi için geliştirilen modern yoklama ve devamsızlık yönetim arayüz
 
 ## Veri Kaynağı ve Sunucusuz API
 
-- Netlify Functions içinde bulunan `students-db` fonksiyonu, `NEON_DATABASE_URL` ortam değişkeni ile belirtilen Neon veritabanına bağlanır.
+
 - Varsayılan kurulumda istemci `/.netlify/functions/students-db` uç noktasına istek gönderir. Geliştirme ortamında Netlify CLI ile çalışmak istemiyorsanız `VITE_STUDENTS_API` değişkeni ile tam URL verebilirsiniz.
 - `PUBLIC_MODE=true` şeklinde bir ortam değişkeni tanımlandığında API, ad ve soyad alanlarını maskeleyerek döndürür.
 
@@ -13,6 +13,7 @@ Ata Akademi için geliştirilen modern yoklama ve devamsızlık yönetim arayüz
 Yerel geliştirme sırasında `.env` dosyası oluşturup aşağıdaki değişkenleri tanımlayabilirsiniz:
 
 ```bash
+
 NEON_DATABASE_URL="postgresql://<kullanici>:<sifre>@<sunucu>/<veritabani>?sslmode=require"
 NEON_SSL_DISABLED=false
 PUBLIC_MODE=false
@@ -31,6 +32,7 @@ netlify dev
 ```
 
 `netlify dev` komutu hem Vite geliştirme sunucusunu hem de Netlify Functions katmanını birlikte çalıştırır. Tarayıcınızda [http://localhost:8888](http://localhost:8888) adresini açarak uygulamayı görüntüleyebilirsiniz. Sadece Vite sunucusunu (`npm run dev`) çalıştırmak isterseniz API isteklerini yönlendirecek `VITE_STUDENTS_API` değişkenini sağlamanız gerekir.
+
 
 
 ## Üretim İçin Derleme
