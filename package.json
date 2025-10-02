@@ -1,0 +1,14 @@
+{
+  "name": "ata-yoklama",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "netlify dev"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "netlify-cli": "^17.24.0"
+  }
+}
