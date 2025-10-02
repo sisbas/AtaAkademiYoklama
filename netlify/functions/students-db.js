@@ -1,12 +1,32 @@
 import { Pool } from 'pg';
 
-const pool = new Pool({
-  connectionString: process.env.NEON_DATABASE_URL,
-  ssl:
-    process.env.NEON_SSL_DISABLED === 'true'
-      ? false
-      : { rejectUnauthorized: false }
-});
+const connectionString =
+  process.env.NEON_DATABASE_URL ||
+  process.env.NETLIFY_DATABASE_URL ||
+  process.env.DATABASE_URL ||
+  process.env.NEON_CONNECTION_STRING ||
+  process.env.PG_DATABASE_URL ||
+  '';
+
+let pool;
+
+const getPool = () => {
+  if (!connectionString) {
+    return null;
+  }
+
+  if (!pool) {
+    pool = new Pool({
+      connectionString,
+      ssl:
+        process.env.NEON_SSL_DISABLED === 'true'
+          ? false
+          : { rejectUnauthorized: false }
+    });
+  }
+
+  return pool;
+};
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,15 +48,31 @@ export async function handler(event) {
     return { statusCode: 200, headers: corsHeaders };
   }
 
-  if (!process.env.NEON_DATABASE_URL) {
+  if (!connectionString) {
     return {
       statusCode: 500,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'NEON_DATABASE_URL tanımlı değil.' })
+      body: JSON.stringify({
+        error:
+          'Neon bağlantı adresi tanımlı değil. NEON_DATABASE_URL veya NETLIFY_DATABASE_URL ortam değişkenini ekleyin.'
+      })
     };
   }
 
   try {
+    const activePool = getPool();
+
+    if (!activePool) {
+      return {
+        statusCode: 500,
+        headers: corsHeaders,
+        body: JSON.stringify({
+          error:
+            'Neon bağlantı adresi tanımlı değil. NEON_DATABASE_URL veya NETLIFY_DATABASE_URL ortam değişkenini ekleyin.'
+        })
+      };
+    }
+
     const url = new URL(event.rawUrl);
     const qClass = url.searchParams.get('class');
     const qSection = url.searchParams.get('section');
@@ -93,7 +129,7 @@ export async function handler(event) {
     params.push(offset);
     sql += ` OFFSET $${params.length}`;
 
-    const { rows } = await pool.query(sql, params);
+    const { rows } = await activePool.query(sql, params);
 
     const total = rows[0]?.total_count ? Number(rows[0].total_count) : 0;
     const responseRows = rows.map(({ total_count, ...rest }) => rest);
@@ -120,10 +156,55 @@ export async function handler(event) {
     };
   } catch (error) {
     console.error('students-db function error', error);
+
+    const friendlyMessage = describeDatabaseError(error);
+
     return {
       statusCode: 500,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'Beklenmeyen bir hata oluştu.' })
+      body: JSON.stringify({
+        error: friendlyMessage,
+        code: typeof error?.code === 'string' ? error.code : undefined
+      })
     };
   }
+}
+
+function describeDatabaseError(error) {
+  if (!error) {
+    return 'Beklenmeyen bir hata oluştu.';
+  }
+
+  const lowerMessage = String(error?.message || '').toLowerCase();
+  const code = typeof error?.code === 'string' ? error.code : '';
+
+  if (code === 'ENOTFOUND' || lowerMessage.includes('getaddrinfo enotfound')) {
+    return 'Neon veritabanı adresi çözümlenemedi. DNS ayarlarınızı ve bağlantı adresinizi kontrol edin.';
+  }
+
+  if (code === 'ENETUNREACH' || lowerMessage.includes('connect enetunreach')) {
+    return 'Neon veritabanına bağlanılamadı (ENETUNREACH). Netlify çıkış IP adreslerini Neon güvenlik ayarlarına ekleyip tekrar deneyin.';
+  }
+
+  if (code === 'ECONNREFUSED' || lowerMessage.includes('connection refused')) {
+    return 'Neon veritabanı bağlantısı reddedildi. Bağlantı dizesini ve veritabanı erişim izinlerini doğrulayın.';
+  }
+
+  if (code === 'ETIMEDOUT' || lowerMessage.includes('timed out')) {
+    return 'Neon veritabanına bağlanma isteği zaman aşımına uğradı. Ağ bağlantınızı ve Neon bölge seçiminizi kontrol edin.';
+  }
+
+  if (code === '28000' || lowerMessage.includes('password authentication failed')) {
+    return 'Neon veritabanı kimlik doğrulaması başarısız oldu. Kullanıcı adı ve şifreyi kontrol edin.';
+  }
+
+  if (code === '28P01') {
+    return 'Neon veritabanı kimlik doğrulaması başarısız oldu. Kullanıcı adı ve şifreyi kontrol edin.';
+  }
+
+  if (code === '3D000') {
+    return 'Belirtilen Neon veritabanı bulunamadı. Bağlantı dizesindeki veritabanı adını doğrulayın.';
+  }
+
+  return 'Öğrenci verileri alınırken beklenmeyen bir hata oluştu. Neon bağlantı ayarlarınızı kontrol edip tekrar deneyin.';
 }
