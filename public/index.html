@@ -1,11 +1,100 @@
 <!DOCTYPE html>
 <html lang="tr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ata Akademi Yoklama</title>
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <title>Ata Akademi - Yoklama</title>
+  <style>
+    body { font-family: Arial; margin: 30px; }
+    select, input, button { padding: 8px; margin: 5px; }
+    .status { margin-left: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Ata Akademi Yoklama Sistemi</h2>
+
+  <div>
+    <label>Sınıf:</label>
+    <select id="classSelect">
+      <!-- JS ile doldurulacak -->
+    </select>
+
+    <label>Tarih:</label>
+    <input type="date" id="dateInput" />
+  </div>
+
+  <button onclick="loadAttendance()">Yoklamayı Getir</button>
+  <div id="attendanceList"></div>
+
+  <script>
+    const classes = [
+      "TYT Sınıfı", "9. Sınıf", "10. Sınıf", "11 Say 1", "11 Say 2", "11 Ea 1", "11 Ea 2",
+      "12 Say 1", "12 Say 2", "12 Say 3", "12 Ea 1", "12 Ea 2", "12 Ea 3",
+      "Mezun Ea 1", "Mezun Ea 2", "Mezun Ea 3", "Mezun Say 1", "Mezun Say 2", "Mezun Say 3"
+    ];
+
+    const classSelect = document.getElementById('classSelect');
+    const dateInput = document.getElementById('dateInput');
+    const attendanceList = document.getElementById('attendanceList');
+
+    // Sınıf listesi doldur
+    classes.forEach(cls => {
+      const opt = document.createElement('option');
+      opt.value = cls;
+      opt.textContent = cls;
+      classSelect.appendChild(opt);
+    });
+
+    // Bugünün tarihini ayarla
+    const today = new Date().toISOString().split('T')[0];
+    dateInput.value = today;
+
+    async function loadAttendance() {
+      const cls = classSelect.value;
+      const date = dateInput.value;
+      if (!cls || !date) return alert('Sınıf ve tarih seçin.');
+
+      const res = await fetch(`/attendance?class=${encodeURIComponent(cls)}&date=${date}`);
+      const data = await res.json();
+
+      if (!res.ok) return alert(data.error || 'Hata oluştu.');
+
+      let html = `<h3>${cls} - ${date}</h3><ul>`;
+      data.forEach(student => {
+        html += `
+          <li>
+            ${student.name}
+            <select class="status" data-id="${student.id}" onchange="saveStatus(this, '${date}')">
+              <option value="">Seç...</option>
+              <option value="geldi" ${student.status === 'geldi' ? 'selected' : ''}>Geldi</option>
+              <option value="gelmedi" ${student.status === 'gelmedi' ? 'selected' : ''}>Gelmedi</option>
+              <option value="mazeretli" ${student.status === 'mazeretli' ? 'selected' : ''}>Mazeretli</option>
+              <option value="izinli" ${student.status === 'izinli' ? 'selected' : ''}>İzinli</option>
+            </select>
+          </li>`;
+      });
+      html += '</ul>';
+      attendanceList.innerHTML = html;
+    }
+
+    async function saveStatus(select, date) {
+      const studentId = select.dataset.id;
+      const status = select.value;
+      if (!status) return;
+
+      const res = await fetch('/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId, date, status })
+      });
+
+      const result = await res.json();
+      if (!res.ok) {
+        alert(result.error || 'Kayıt başarısız.');
+        select.value = ''; // Geri al
+      } else {
+        alert('Yoklama kaydedildi.');
+      }
+    }
+  </script>
+</body>
 </html>
