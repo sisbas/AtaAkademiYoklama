@@ -2,9 +2,10 @@
   "name": "ata-akademi-yoklama",
   "version": "1.0.0",
   "description": "Ata Akademi için modern yoklama takip sistemi",
-  "main": "src/index.js",
+  "main": "src/server.js",
   "scripts": {
-    "dev": "netlify dev",
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
     "build": "rm -rf dist && mkdir -p dist && cp -R public/. dist",
     "deploy": "netlify deploy --prod",
     "test": "echo 'Tests not yet implemented'"
@@ -18,8 +19,8 @@
   "author": "Ata Akademi",
   "license": "MIT",
   "dependencies": {
-    "pg": "^8.11.3",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "pg": "^8.11.3"
   },
   "devDependencies": {
     "netlify-cli": "^17.24.0"

@@ -116,17 +116,40 @@
       padding: 30px;
     }
 
+    #notificationArea {
+      display: none;
+      margin-bottom: 20px;
+      gap: 12px;
+    }
+
     .info-box {
       background: #e7f3ff;
       border-left: 4px solid #2196F3;
       padding: 15px;
-      margin-bottom: 20px;
-      border-radius: 4px;
+      border-radius: 6px;
+      color: #0c5460;
+      line-height: 1.5;
     }
 
     .info-box.warning {
       background: #fff3cd;
       border-left-color: #ffc107;
+      color: #856404;
+    }
+
+    .info-box.error {
+      background: #f8d7da;
+      border-left-color: #dc3545;
+      color: #721c24;
+    }
+
+    .info-box ul {
+      margin-top: 10px;
+      padding-left: 20px;
+    }
+
+    .info-box li {
+      margin-bottom: 4px;
     }
 
     .stats {
@@ -295,58 +318,100 @@
         <input type="date" id="dateInput" />
       </div>
 
-      <button class="btn btn-primary" onclick="loadAttendance()">
-        Yoklamayı Getir
-      </button>
+      <button class="btn btn-primary" id="loadButton">Yoklamayı Getir</button>
     </div>
 
     <div class="content">
+      <div id="notificationArea"></div>
       <div id="statsContainer" style="display: none;"></div>
       <div id="attendanceList"></div>
     </div>
   </div>
 
   <script>
-    const classes = [
-      "TYT Sınıfı", "9. Sınıf", "10. Sınıf", 
-      "11 Say 1", "11 Say 2", "11 Ea 1", "11 Ea 2",
-      "12 Say 1", "12 Say 2", "12 Say 3", "12 Ea 1", "12 Ea 2", "12 Ea 3",
-      "Mezun Ea 1", "Mezun Ea 2", "Mezun Ea 3", 
-      "Mezun Say 1", "Mezun Say 2", "Mezun Say 3"
+    const API_BASE = '/api';
+    const VALID_STATUSES = ['geldi', 'gelmedi', 'mazeretli', 'izinli'];
+
+    const defaultClassList = [
+      'TYT Sınıfı', '9. Sınıf', '10. Sınıf',
+      '11 Say 1', '11 Say 2', '11 Ea 1', '11 Ea 2',
+      '12 Say 1', '12 Say 2', '12 Say 3', '12 Ea 1', '12 Ea 2', '12 Ea 3',
+      'Mezun Ea 1', 'Mezun Ea 2', 'Mezun Ea 3',
+      'Mezun Say 1', 'Mezun Say 2', 'Mezun Say 3'
     ];
 
     const classSelect = document.getElementById('classSelect');
     const dateInput = document.getElementById('dateInput');
     const attendanceList = document.getElementById('attendanceList');
     const statsContainer = document.getElementById('statsContainer');
+    const notificationArea = document.getElementById('notificationArea');
+    const loadButton = document.getElementById('loadButton');
 
+    let classCatalog = [];
     let currentStudents = [];
+    let currentMetadata = null;
+    let scheduleNotification = null;
+    let attendanceNotification = null;
 
-    // Sınıf listesi doldur
-    classes.forEach(cls => {
-      const opt = document.createElement('option');
-      opt.value = cls;
-      opt.textContent = cls;
-      classSelect.appendChild(opt);
-    });
+    init();
 
-    // Bugünün tarihini ayarla
-    const today = new Date().toISOString().split('T')[0];
-    dateInput.value = today;
+    async function init() {
+      setToday();
+      await loadClassCatalog();
+      loadButton.addEventListener('click', loadAttendance);
+      classSelect.addEventListener('change', updateScheduleNotification);
+    }
+
+    function setToday() {
+      const today = new Date().toISOString().split('T')[0];
+      dateInput.value = today;
+    }
+
+    async function loadClassCatalog() {
+      try {
+        const res = await fetch(`${API_BASE}/classes`);
+        if (!res.ok) {
+          throw new Error('Sınıf listesi alınamadı');
+        }
+
+        classCatalog = await res.json();
+      } catch (error) {
+        console.warn('Sınıf bilgileri yüklenemedi, varsayılan liste kullanılıyor.', error);
+        classCatalog = defaultClassList.map(name => ({ name, schedule: null, notes: 'Ders programı yakında güncellenecek.' }));
+      }
+
+      populateClassSelect();
+    }
+
+    function populateClassSelect() {
+      classSelect.innerHTML = '<option value="">Sınıf seçin...</option>';
+      classCatalog
+        .map(cls => cls.name)
+        .concat(defaultClassList)
+        .filter((value, index, array) => array.indexOf(value) === index)
+        .forEach(cls => {
+          const opt = document.createElement('option');
+          opt.value = cls;
+          opt.textContent = cls;
+          classSelect.appendChild(opt);
+        });
+    }
 
     async function loadAttendance() {
       const cls = classSelect.value;
       const date = dateInput.value;
-      
+
       if (!cls || !date) {
         showMessage('Lütfen sınıf ve tarih seçin.', 'warning');
         return;
       }
 
       showLoading();
+      attendanceNotification = null;
+      renderNotifications();
 
       try {
-        const res = await fetch(`/attendance?class=${encodeURIComponent(cls)}&date=${date}`);
+        const res = await fetch(`${API_BASE}/attendance?class=${encodeURIComponent(cls)}&date=${date}`);
         const data = await res.json();
 
         if (!res.ok) {
@@ -354,33 +419,42 @@
           return;
         }
 
-        currentStudents = data;
-        displayAttendance(data, cls, date);
-        displayStats(data);
+        currentStudents = data.students || [];
+        currentMetadata = data.metadata || { className: cls, date, total: currentStudents.length };
+
+        if (data.classInfo) {
+          upsertClassInfo(data.classInfo);
+        }
+
+        updateScheduleNotification();
+        updateAttendanceNotification();
+
+        if (currentStudents.length === 0) {
+          showEmptyState();
+          return;
+        }
+
+        displayAttendance(currentStudents, currentMetadata);
+        displayStats(currentStudents);
       } catch (error) {
         showMessage('Bağlantı hatası: ' + error.message, 'error');
       }
     }
 
-    function displayAttendance(students, className, date) {
-      if (students.length === 0) {
-        attendanceList.innerHTML = `
-          <div class="empty-state">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
-            </svg>
-            <h3>Öğrenci Bulunamadı</h3>
-            <p>Bu sınıfta kayıtlı öğrenci bulunmamaktadır.</p>
-          </div>
-        `;
-        statsContainer.style.display = 'none';
-        return;
+    function upsertClassInfo(info) {
+      const index = classCatalog.findIndex(cls => cls.name === info.name);
+      if (index >= 0) {
+        classCatalog[index] = info;
+      } else {
+        classCatalog.push(info);
       }
+    }
 
+    function displayAttendance(students, metadata) {
       let html = `
         <div class="info-box">
-          <strong>${className}</strong> - ${formatDate(date)} 
-          <span style="float: right;">${students.length} Öğrenci</span>
+          <strong>${metadata.className}</strong> - ${formatDate(metadata.date)}
+          <span style="float: right;">${metadata.total || students.length} Öğrenci</span>
         </div>
         <div class="attendance-list">
       `;
@@ -393,7 +467,7 @@
             <select class="status-select ${student.status}"
                     data-id="${student.id}"
                     data-original="${originalStatus}"
-                    onchange="saveStatus(this, '${date}')">
+                    onchange="saveStatus(this, '${metadata.date}')">
               <option value="">Durum Seçin...</option>
               <option value="geldi" ${student.status === 'geldi' ? 'selected' : ''}>✓ Geldi</option>
               <option value="gelmedi" ${student.status === 'gelmedi' ? 'selected' : ''}>✗ Gelmedi</option>
@@ -456,7 +530,7 @@
       select.disabled = true;
 
       try {
-        const res = await fetch('/attendance', {
+        const res = await fetch(`${API_BASE}/attendance`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ studentId, date, status })
@@ -464,21 +538,21 @@
 
         const result = await res.json();
 
-        if (!res.ok) {
-          throw new Error(result.error || 'Kayıt başarısız.');
+        if (!res.ok || !result.success) {
+          throw new Error(result.error || result.message || 'Kayıt başarısız.');
         }
 
         select.className = `status-select ${status}`;
         select.dataset.original = status;
-        
-        // İstatistikleri güncelle
-        const student = currentStudents.find(s => s.id == studentId);
+
+        const student = currentStudents.find(s => `${s.id}` === `${studentId}`);
         if (student) {
           student.status = status;
-          displayStats(currentStudents);
         }
 
-        showToast('✓ Yoklama kaydedildi', 'success');
+        refreshMetadata();
+        displayStats(currentStudents);
+        showToast(result.message || '✓ Yoklama kaydedildi', 'success');
       } catch (error) {
         showToast('✗ ' + error.message, 'error');
         select.value = originalValue;
@@ -486,6 +560,18 @@
       } finally {
         select.disabled = false;
       }
+    }
+
+    function refreshMetadata() {
+      if (!currentMetadata) {
+        return;
+      }
+
+      const recorded = currentStudents.filter(student => VALID_STATUSES.includes(student.status)).length;
+      currentMetadata.recorded = recorded;
+      currentMetadata.total = currentStudents.length;
+      currentMetadata.hasAttendance = recorded > 0;
+      updateAttendanceNotification();
     }
 
     function showLoading() {
@@ -502,6 +588,20 @@
       attendanceList.innerHTML = `
         <div class="info-box ${type}">
           ${message}
+        </div>
+      `;
+      statsContainer.style.display = 'none';
+      renderNotifications();
+    }
+
+    function showEmptyState() {
+      attendanceList.innerHTML = `
+        <div class="empty-state">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+          </svg>
+          <h3>Öğrenci Bulunamadı</h3>
+          <p>Bu sınıfta kayıtlı öğrenci bulunmamaktadır.</p>
         </div>
       `;
       statsContainer.style.display = 'none';
@@ -530,17 +630,92 @@
       }, 3000);
     }
 
+    function renderNotifications() {
+      const notifications = [scheduleNotification, attendanceNotification].filter(Boolean);
+      if (notifications.length === 0) {
+        notificationArea.style.display = 'none';
+        notificationArea.innerHTML = '';
+        return;
+      }
+
+      notificationArea.innerHTML = notifications
+        .map(item => `<div class="info-box ${item.type || ''}">${item.html || item.message}</div>`)
+        .join('');
+
+      notificationArea.style.display = 'grid';
+    }
+
+    function updateScheduleNotification() {
+      const selectedClass = classSelect.value;
+      if (!selectedClass) {
+        scheduleNotification = null;
+        renderNotifications();
+        return;
+      }
+
+      const info = classCatalog.find(cls => cls.name === selectedClass);
+      if (!info) {
+        scheduleNotification = null;
+        renderNotifications();
+        return;
+      }
+
+      if (info.schedule && Object.keys(info.schedule).length > 0) {
+        const items = Object.entries(info.schedule)
+          .map(([day, count]) => `<li><strong>${day}</strong>: ${count} ders</li>`)
+          .join('');
+
+        const totalText = info.weeklyTotal ? `<p><strong>Haftalık toplam:</strong> ${info.weeklyTotal} ders</p>` : '';
+
+        scheduleNotification = {
+          type: 'info',
+          html: `
+            <strong>${info.name}</strong> sınıfı ders programı:
+            <ul>${items}</ul>
+            ${totalText}
+            <p>${info.notes || ''}</p>
+          `
+        };
+      } else {
+        scheduleNotification = {
+          type: 'warning',
+          message: info.notes || 'Ders programı yakında güncellenecek.'
+        };
+      }
+
+      renderNotifications();
+    }
+
+    function updateAttendanceNotification() {
+      if (!currentMetadata || !currentMetadata.hasAttendance) {
+        attendanceNotification = null;
+        renderNotifications();
+        return;
+      }
+
+      const recorded = currentMetadata.recorded || 0;
+      const total = currentMetadata.total || currentStudents.length;
+      const dateText = formatDate(currentMetadata.date);
+      attendanceNotification = {
+        type: 'warning',
+        message: `${dateText} tarihine ait ${recorded}/${total} öğrencinin yoklama kaydı mevcut. Güncelleme yapabilirsiniz.`
+      };
+
+      renderNotifications();
+    }
+
     function formatDate(dateStr) {
       const date = new Date(dateStr + 'T00:00:00');
-      return date.toLocaleDateString('tr-TR', { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
+      return date.toLocaleDateString('tr-TR', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
       });
     }
 
-    // CSS animasyonları
+    window.saveStatus = saveStatus;
+
     const style = document.createElement('style');
     style.textContent = `
       @keyframes slideIn {
