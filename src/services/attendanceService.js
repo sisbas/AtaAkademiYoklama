@@ -130,6 +130,26 @@ function activateFallback(error) {
   console.warn('Veritabanı bağlantısı hatası nedeniyle geçici hafıza moduna geçildi.', error);
 }
 
+function isRecoverableDatabaseIssue(error) {
+  if (isConnectionIssue(error)) {
+    return true;
+  }
+
+  if (!error || !error.message) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+
+  return (
+    message.includes('students tablosunda') ||
+    message.includes('relation "students" does not exist') ||
+    message.includes('relation "attendance" does not exist') ||
+    message.includes('column') && message.includes('students') ||
+    message.includes('student_schema_unavailable')
+  );
+}
+
 function getClassInfo(name) {
   const rule = SCHEDULE_RULES.find(({ test }) => test(name));
   const schedule = rule ? rule.schedule : null;
@@ -153,7 +173,7 @@ function getClasses() {
 async function fetchStudentsFromDatabase(className, date) {
   const schema = await db.getStudentSchema();
   if (!schema) {
-    return [];
+    throw new Error('STUDENT_SCHEMA_UNAVAILABLE');
   }
 
   const { idColumn, nameColumn, classColumn, orderColumn } = schema;
@@ -189,7 +209,7 @@ async function getStudentsWithAttendance(className, date) {
       const students = await fetchStudentsFromDatabase(className, date);
       return students;
     } catch (error) {
-      if (isConnectionIssue(error)) {
+      if (isRecoverableDatabaseIssue(error)) {
         activateFallback(error);
       } else {
         throw error;
@@ -255,7 +275,7 @@ async function saveAttendance(studentId, date, status) {
         message: 'Yoklama kaydedildi.'
       };
     } catch (error) {
-      if (isConnectionIssue(error)) {
+      if (isRecoverableDatabaseIssue(error)) {
         activateFallback(error);
       } else {
         throw error;
@@ -299,7 +319,7 @@ async function deleteAttendance(studentId, date) {
         message: 'Yoklama silindi.'
       };
     } catch (error) {
-      if (isConnectionIssue(error)) {
+      if (isRecoverableDatabaseIssue(error)) {
         activateFallback(error);
       } else {
         throw error;
