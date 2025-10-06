@@ -386,11 +386,13 @@
       `;
 
       students.forEach(student => {
+        const originalStatus = student.status || '';
         html += `
           <div class="student-row">
             <span class="student-name">${student.name}</span>
-            <select class="status-select ${student.status}" 
-                    data-id="${student.id}" 
+            <select class="status-select ${student.status}"
+                    data-id="${student.id}"
+                    data-original="${originalStatus}"
                     onchange="saveStatus(this, '${date}')">
               <option value="">Durum Seçin...</option>
               <option value="geldi" ${student.status === 'geldi' ? 'selected' : ''}>✓ Geldi</option>
@@ -444,13 +446,13 @@
     async function saveStatus(select, date) {
       const studentId = select.dataset.id;
       const status = select.value;
-      
+
       if (!status) {
         select.className = 'status-select';
         return;
       }
 
-      const originalValue = select.dataset.original || '';
+      const originalValue = select.dataset.original ?? select.value ?? '';
       select.disabled = true;
 
       try {
