@@ -329,7 +329,39 @@
   </div>
 
   <script>
-    const API_BASE = '/api';
+    const REMOTE_API_BASE = 'https://ataakademiyoklama-eb98f60a1c26.herokuapp.com/api';
+    const LOCAL_API_BASE = 'http://localhost:3000/api';
+
+    function resolveApiBase() {
+      const params = new URLSearchParams(window.location.search);
+      const overrideParam = params.get('apiBase');
+      if (overrideParam) {
+        try {
+          window.localStorage?.setItem('apiBaseOverride', overrideParam);
+        } catch (error) {
+          console.warn('API taban adresi kaydedilemedi:', error);
+        }
+      }
+
+      const storedOverride = overrideParam || window.localStorage?.getItem('apiBaseOverride');
+      if (storedOverride) {
+        return storedOverride.replace(/\/$/, '');
+      }
+
+      const host = window.location.hostname;
+
+      if (host === 'localhost' || host === '127.0.0.1') {
+        return LOCAL_API_BASE;
+      }
+
+      if (host && host.endsWith('herokuapp.com')) {
+        return `${window.location.origin.replace(/\/$/, '')}/api`;
+      }
+
+      return REMOTE_API_BASE;
+    }
+
+    const API_BASE = resolveApiBase();
     const VALID_STATUSES = ['geldi', 'gelmedi', 'mazeretli', 'izinli'];
 
     const defaultClassList = [
@@ -352,14 +384,24 @@
     let currentMetadata = null;
     let scheduleNotification = null;
     let attendanceNotification = null;
+    let connectionNotification = null;
 
     init();
 
     async function init() {
       setToday();
+      updateConnectionNotification();
       await loadClassCatalog();
       loadButton.addEventListener('click', loadAttendance);
       classSelect.addEventListener('change', updateScheduleNotification);
+    }
+
+    function updateConnectionNotification() {
+      connectionNotification = {
+        type: 'info',
+        message: `Sunucu bağlantısı: <strong>${API_BASE}</strong>`
+      };
+      renderNotifications();
     }
 
     function setToday() {
@@ -631,7 +673,7 @@
     }
 
     function renderNotifications() {
-      const notifications = [scheduleNotification, attendanceNotification].filter(Boolean);
+      const notifications = [connectionNotification, scheduleNotification, attendanceNotification].filter(Boolean);
       if (notifications.length === 0) {
         notificationArea.style.display = 'none';
         notificationArea.innerHTML = '';
