@@ -2,6 +2,9 @@
 require('dotenv').config();
 const { URL } = require('url');
 const { Pool } = require('pg');
+const { createLogger } = require('./utils/logger');
+
+const logger = createLogger('db');
 
 const databaseUrl =
   process.env.DATABASE_URL ||
@@ -40,7 +43,11 @@ function normaliseDatabaseUrl(url) {
     parsed.search = params.toString();
     return parsed.toString();
   } catch (error) {
-    console.warn('DATABASE_URL normalleştirilirken hata oluştu. Orijinal değer kullanılacak.', error);
+    logger.warn('DATABASE_URL normalleştirilirken hata oluştu. Orijinal değer kullanılacak.', {
+      error: {
+        message: error.message
+      }
+    });
     return url;
   }
 }
@@ -83,7 +90,12 @@ if (hasDatabase) {
   pool = new Pool(poolConfig);
 
   pool.on('error', error => {
-    console.error('PostgreSQL bağlantı havuzunda beklenmeyen bir hata oluştu.', error);
+    logger.error('PostgreSQL bağlantı havuzunda beklenmeyen bir hata oluştu.', {
+      error: {
+        message: error.message,
+        code: error.code
+      }
+    });
   });
 }
 
