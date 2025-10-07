@@ -1,8 +1,0 @@
-[build]
-  functions = "src/functions"
-  publish = "public"
-
-[[redirects]]
-  from = "/attendance"
-  to = "/.netlify/functions/attendance"
-  status = 200

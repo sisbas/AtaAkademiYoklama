@@ -375,36 +375,14 @@
   </div>
 
   <script>
-    const REMOTE_API_BASE = 'https://ataakademiyoklama-eb98f60a1c26.herokuapp.com/api';
-    const LOCAL_API_BASE = 'http://localhost:3000/api';
-
     function resolveApiBase() {
-      const params = new URLSearchParams(window.location.search);
-      const overrideParam = params.get('apiBase');
-      if (overrideParam) {
-        try {
-          window.localStorage?.setItem('apiBaseOverride', overrideParam);
-        } catch (error) {
-          console.warn('API taban adresi kaydedilemedi:', error);
-        }
+      // Heroku production
+      if (window.location.hostname.includes('herokuapp.com')) {
+        return `${window.location.origin}/api`;
       }
 
-      const storedOverride = overrideParam || window.localStorage?.getItem('apiBaseOverride');
-      if (storedOverride) {
-        return storedOverride.replace(/\/$/, '');
-      }
-
-      const host = window.location.hostname;
-
-      if (host === 'localhost' || host === '127.0.0.1') {
-        return LOCAL_API_BASE;
-      }
-
-      if (host && host.endsWith('herokuapp.com')) {
-        return `${window.location.origin.replace(/\/$/, '')}/api`;
-      }
-
-      return REMOTE_API_BASE;
+      // Local development
+      return 'http://localhost:3000/api';
     }
 
     const API_BASE = resolveApiBase();
