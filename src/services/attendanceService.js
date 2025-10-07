@@ -278,6 +278,19 @@ function deactivateFallback() {
   logger.info('Veritabanı bağlantısı yeniden sağlandı; geçici hafıza devre dışı bırakıldı.');
 }
 
+function isTimeoutError(error) {
+  if (!error) {
+    return false;
+  }
+
+  if (error.code === '57014') {
+    return true;
+  }
+
+  const message = (error.message || '').toLowerCase();
+  return message.includes('timeout');
+}
+
 function isConnectionIssue(error) {
   const connectionErrorCodes = new Set(['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETUNREACH']);
   if (!error) {
@@ -298,6 +311,10 @@ function isConnectionIssue(error) {
         return true;
       }
     }
+  }
+
+  if (isTimeoutError(error)) {
+    return true;
   }
 
   const message = (error.message || '').toString();
@@ -349,36 +366,87 @@ function getClasses() {
 }
 
 async function fetchStudentsFromDatabase(classDefinition, date) {
-  const schema = await db.getStudentSchema();
-  if (!schema) {
-    throw new InternalError('Öğrenci şeması alınamadı.', {
-      details: { reason: 'STUDENT_SCHEMA_UNAVAILABLE' }
+  try {
+    const schema = await db.getStudentSchema();
+    if (!schema) {
+      throw new InternalError('Öğrenci şeması alınamadı.', {
+        details: { reason: 'STUDENT_SCHEMA_UNAVAILABLE' }
+      });
+    }
+
+    const { idColumn, nameColumn, classColumn, orderColumn } = schema;
+    const classNameExpression = classColumn
+      ? `COALESCE(cg.name, s.${classColumn}, $3)`
+      : 'COALESCE(cg.name, $3)';
+    const classIdExpression = classColumn
+      ? `COALESCE(cg.code, s.${classColumn}::text, $2)`
+      : 'COALESCE(cg.code, $2)';
+
+    const classFilters = [
+      'cg.code = $2',
+      'cg.id::text = $2',
+      'LOWER(cg.name) = LOWER($3)'
+    ];
+
+    if (classColumn) {
+      classFilters.push(`s.${classColumn} = $2`);
+      classFilters.push(`LOWER(s.${classColumn}) = LOWER($3)`);
+    }
+
+    const filterClause = classFilters.map(condition => `(${condition})`).join(' OR ');
+
+    const query = `
+      SELECT DISTINCT ON (s.${idColumn}::text)
+        s.${idColumn}::text AS id,
+        s.${nameColumn} AS name,
+        ${classNameExpression} AS class_name,
+        ${classIdExpression} AS class_identifier,
+        COALESCE(a.status, '') AS status
+      FROM students s
+      LEFT JOIN enrollments e
+        ON e.student_id::text = s.${idColumn}::text
+        AND (e.status IS NULL OR e.status = 'active')
+      LEFT JOIN class_groups cg
+        ON cg.id::text = e.class_group_id::text
+      LEFT JOIN attendance a
+        ON s.${idColumn}::text = a.student_id AND a.date = $1
+      WHERE ${filterClause}
+      ORDER BY s.${idColumn}::text, s.${orderColumn}
+    `;
+
+    const params = [date, classDefinition.id, classDefinition.name];
+    const { rows } = await db.query(query, params);
+
+    return rows.map(row => {
+      const classIdentifier = row.class_identifier || classDefinition.id;
+      const rawClassName = row.class_name || '';
+      const className = rawClassName && rawClassName.trim()
+        ? rawClassName.trim().toLowerCase() === (classIdentifier || '').toLowerCase()
+          ? classDefinition.name
+          : rawClassName
+        : classDefinition.name;
+
+      return {
+        id: row.id,
+        name: row.name,
+        class: className,
+        classId: classIdentifier,
+        className,
+        status: row.status || ''
+      };
     });
+  } catch (error) {
+    logger.error('Öğrenciler veritabanından alınırken hata oluştu.', {
+      error: {
+        name: error?.name,
+        message: error?.message,
+        code: error?.code
+      },
+      classId: classDefinition?.id,
+      date
+    });
+    throw error;
   }
-
-  const { idColumn, nameColumn, classColumn, orderColumn } = schema;
-  const query = `
-    SELECT
-      s.${idColumn}::text AS id,
-      s.${nameColumn} AS name,
-      s.${classColumn} AS class,
-      COALESCE(a.status, '') AS status
-    FROM students s
-    LEFT JOIN attendance a
-      ON s.${idColumn}::text = a.student_id AND a.date = $1
-    WHERE s.${classColumn} = $2
-    ORDER BY s.${orderColumn}
-  `;
-
-  const { rows } = await db.query(query, [date, classDefinition.name]);
-  return rows.map(row => ({
-    id: row.id,
-    name: row.name,
-    class: row.class || classDefinition.name,
-    classId: classDefinition.id,
-    className: classDefinition.name,
-    status: row.status || ''
-  }));
 }
 
 function wrapDatabaseError(error, message) {
@@ -404,6 +472,7 @@ async function attemptDatabaseOperation(operation, message, options = {}) {
       if (!fallbackActive) {
         activateFallback(error);
       } else {
+        markFallbackAttempt();
         logger.warn('Veritabanı işlemi hatası nedeniyle geçici hafıza kullanılacak.', {
           error: {
             message: error?.message,

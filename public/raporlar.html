@@ -465,10 +465,57 @@
   <script>
     const REMOTE_API_BASE = 'https://ataakademiyoklama-eb98f60a1c26.herokuapp.com/api';
     const LOCAL_API_BASE = 'http://localhost:3000/api';
-    
-    const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-      ? LOCAL_API_BASE
-      : REMOTE_API_BASE;
+
+    function safeGetItem(key) {
+      try {
+        return window.localStorage?.getItem(key) || null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function safeSetItem(key, value) {
+      try {
+        window.localStorage?.setItem(key, value);
+      } catch (error) {
+        // ignore storage errors
+      }
+    }
+
+    function resolveApiBase() {
+      const { hostname, origin } = window.location;
+      const cleanOrigin = origin.replace(/\/$/, '');
+      const params = new URLSearchParams(window.location.search);
+      const overrideParam = params.get('apiBase');
+
+      if (overrideParam) {
+        safeSetItem('apiBaseOverride', overrideParam);
+        return overrideParam.replace(/\/$/, '');
+      }
+
+      const storedOverride = safeGetItem('apiBaseOverride');
+      if (storedOverride) {
+        return storedOverride.replace(/\/$/, '');
+      }
+
+      const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
+      if (isLocalHost) {
+        return LOCAL_API_BASE;
+      }
+
+      const isNetlifyHost = /netlify\.(app|live)$/i.test(hostname) || window.location.port === '8888';
+      if (isNetlifyHost) {
+        return `${cleanOrigin}/.netlify/functions`;
+      }
+
+      if (hostname && hostname.endsWith('herokuapp.com')) {
+        return `${cleanOrigin}/api`;
+      }
+
+      return REMOTE_API_BASE;
+    }
+
+    const API_BASE = resolveApiBase();
 
     const defaultClassList = [
       'TYT Sınıfı', '9. Sınıf', '10. Sınıf',
