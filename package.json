@@ -1,0 +1,15 @@
+{
+  "name": "ataakademi-yoklama",
+  "private": true,
+  "workspaces": [
+    "ataakademi-backend"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "npm run start --workspace ataakademi-backend",
+    "dev": "npm run dev --workspace ataakademi-backend",
+    "seed": "npm run seed --workspace ataakademi-backend"
+  }
+}
