@@ -84,15 +84,46 @@ const CLASS_LOOKUP = new Map(CLASS_DEFINITIONS.map(cls => [cls.id, cls]));
 
 const VALID_STATUSES = ['geldi', 'gelmedi', 'mazeretli', 'izinli'];
 
-const fallbackStudents = CLASS_DEFINITIONS.flatMap((classDef, classIndex) =>
-  Array.from({ length: 5 }, (_, idx) => ({
+const FALLBACK_STUDENTS_BY_CLASS = new Map([
+  [
+    '9-sinif',
+    [
+      { name: 'ALİ GÜLTEKİN' },
+      { name: 'AVŞİN AKÇİLAD' },
+      { name: 'BERK CEMAL CEYHAN' },
+      { name: 'ÇAĞAN CEMAL KAYA' },
+      { name: 'DÜZGÜN ALİ YILDIZ' },
+      { name: 'EBRAR ERGİN' },
+      { name: 'ECRİN YILMAZ' },
+      { name: 'EFTELYA GÜZEL' },
+      { name: 'EREN ARTUÇ' },
+      { name: 'KAĞAN TOPAL' },
+      { name: 'YUSUFCAN VAROL' }
+    ]
+  ]
+]);
+
+const fallbackStudents = CLASS_DEFINITIONS.flatMap((classDef, classIndex) => {
+  const customStudents = FALLBACK_STUDENTS_BY_CLASS.get(classDef.id);
+
+  if (Array.isArray(customStudents) && customStudents.length > 0) {
+    return customStudents.map((student, idx) => ({
+      id: student.id ?? `${classIndex * 100 + idx + 1}`,
+      name: student.name,
+      classId: student.classId ?? classDef.id,
+      className: student.className ?? classDef.name,
+      class: student.class ?? classDef.name
+    }));
+  }
+
+  return Array.from({ length: 5 }, (_, idx) => ({
     id: `${classIndex * 100 + idx + 1}`,
     name: `${classDef.name} Öğrenci ${idx + 1}`,
     classId: classDef.id,
     className: classDef.name,
     class: classDef.name
-  }))
-);
+  }));
+});
 
 const fallbackAttendance = new Map();
 
