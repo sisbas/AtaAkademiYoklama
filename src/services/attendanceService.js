@@ -342,7 +342,8 @@ function wrapDatabaseError(error, message) {
   return new InternalError(message || 'Veritabanı işlemi sırasında hata oluştu.', { cause: error });
 }
 
-async function attemptDatabaseOperation(operation, message) {
+async function attemptDatabaseOperation(operation, message, options = {}) {
+  const { allowFallbackOnError = false } = options;
   try {
     const result = await operation();
 
@@ -352,8 +353,18 @@ async function attemptDatabaseOperation(operation, message) {
 
     return result;
   } catch (error) {
-    if (isRecoverableDatabaseIssue(error)) {
-      activateFallback(error);
+    if (allowFallbackOnError || isRecoverableDatabaseIssue(error)) {
+      if (!fallbackActive) {
+        activateFallback(error);
+      } else {
+        logger.warn('Veritabanı işlemi hatası nedeniyle geçici hafıza kullanılacak.', {
+          error: {
+            message: error?.message,
+            code: error?.code
+          },
+          operation: message
+        });
+      }
       return null;
     }
 
@@ -381,6 +392,9 @@ async function getStudentsWithAttendance(classIdentifier, date) {
   if (shouldAttemptDatabase()) {
     const students = await attemptDatabaseOperation(
       () => fetchStudentsFromDatabase(classDefinition, normalisedDate),
+      'Öğrenci listesi alınırken hata oluştu.',
+      { allowFallbackOnError: true }
+
       'Öğrenci listesi alınırken hata oluştu.'
     );
 
@@ -455,7 +469,7 @@ async function saveAttendance(studentId, date, status) {
         operation: 'created',
         message: 'Yoklama kaydedildi.'
       };
-    }, 'Yoklama kaydedilirken hata oluştu.');
+    }, 'Yoklama kaydedilirken hata oluştu.', { allowFallbackOnError: true });
 
     if (dbResult) {
       return dbResult;
@@ -503,7 +517,7 @@ async function deleteAttendance(studentId, date) {
         success: true,
         message: 'Yoklama silindi.'
       };
-    }, 'Yoklama silinirken hata oluştu.');
+    }, 'Yoklama silinirken hata oluştu.', { allowFallbackOnError: true });
 
     if (dbResult) {
       return dbResult;
