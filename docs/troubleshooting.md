@@ -5,7 +5,7 @@
 ### What the error means
 Chrome prints this message when a content script (usually injected by a browser extension) sends a request to its background service worker or extension page using `chrome.runtime.sendMessage`/`chrome.tabs.sendMessage`, but the other side closes before `sendResponse` is called. Because the promise returned by the messaging API is rejected, DevTools shows the error in the console.
 
-The Ata Akademi Yoklama frontend (`public/index.html`) does not ship a `content.js` bundle or any Chrome extension messaging code, so the error is not originating from the application itself. It is produced by a third-party extension that is active on the page.
+The Ata Akademi Yoklama frontend (`public/index.html`) does not ship a `content.js` bundle or any Chrome extension messaging code by default, so the error is normally produced by a third-party extension that is active on the page. For local development we now bundle an optional sample extension in `extension/` that demonstrates the correct Manifest V3 messaging pattern and suppresses the noisy error.
 
 ### Likely causes
 * A browser extension injected a `content.js` file and attempted to contact its background service worker, but the worker terminated or never called `sendResponse`.
