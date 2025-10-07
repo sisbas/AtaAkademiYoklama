@@ -1,5 +1,6 @@
 // src/db.js
 require('dotenv').config();
+const { URL } = require('url');
 const { Pool } = require('pg');
 
 const databaseUrl =
@@ -8,12 +9,68 @@ const databaseUrl =
   process.env.PG_CONNECTION_STRING ||
   process.env.POSTGRES_URL;
 
+const DEFAULT_CHANNEL_BINDING_MODE = process.env.PG_CHANNEL_BINDING_MODE || 'prefer';
+const FALLBACK_SSL_MODE = 'require';
+
+function normaliseDatabaseUrl(url) {
+  if (!url) {
+    return url;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const params = parsed.searchParams;
+
+    if (!params.has('sslmode')) {
+      params.set('sslmode', FALLBACK_SSL_MODE);
+    }
+
+    if (!params.has('channel_binding')) {
+      params.set('channel_binding', DEFAULT_CHANNEL_BINDING_MODE);
+    }
+
+    if (!params.has('application_name')) {
+      params.set('application_name', 'ata-akademi-yoklama');
+    }
+
+    if (!params.has('connect_timeout')) {
+      params.set('connect_timeout', '10');
+    }
+
+    parsed.search = params.toString();
+    return parsed.toString();
+  } catch (error) {
+    console.warn('DATABASE_URL normalleştirilirken hata oluştu. Orijinal değer kullanılacak.', error);
+    return url;
+  }
+}
+
+const normalisedDatabaseUrl = normaliseDatabaseUrl(databaseUrl);
+
+function parseInteger(value, fallback, { min } = {}) {
+  const parsed = Number.parseInt(value, 10);
+  const candidate = Number.isFinite(parsed) ? parsed : fallback;
+
+  if (typeof min === 'number' && Number.isFinite(min)) {
+    return Math.max(candidate, min);
+  }
+
+  return candidate;
+}
+
 const hasDatabase = Boolean(databaseUrl);
 
 let pool;
 if (hasDatabase) {
   const poolConfig = {
-    connectionString: databaseUrl
+    connectionString: normalisedDatabaseUrl,
+    max: parseInteger(process.env.PG_POOL_MAX ?? process.env.PG_MAX_CONNECTIONS, 10, { min: 1 }),
+    idleTimeoutMillis: parseInteger(process.env.PG_IDLE_TIMEOUT_MS, 10000, { min: 0 }),
+    connectionTimeoutMillis: parseInteger(
+      process.env.PG_CONNECTION_TIMEOUT_MS ?? process.env.PG_CONNECT_TIMEOUT_MS,
+      10000,
+      { min: 1000 }
+    )
   };
 
   const shouldUseSSL = process.env.DATABASE_SSL !== 'false';
@@ -24,6 +81,10 @@ if (hasDatabase) {
   }
 
   pool = new Pool(poolConfig);
+
+  pool.on('error', error => {
+    console.error('PostgreSQL bağlantı havuzunda beklenmeyen bir hata oluştu.', error);
+  });
 }
 
 let initPromise;
