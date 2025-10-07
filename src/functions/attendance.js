@@ -5,6 +5,12 @@ const {
   saveAttendance,
   deleteAttendance
 } = require('../services/attendanceService');
+const {
+  ValidationError,
+  toAppError,
+  logError,
+  buildErrorResponse
+} = require('../utils/errors');
 
 const headers = {
   'Content-Type': 'application/json',
@@ -13,21 +19,40 @@ const headers = {
   'Access-Control-Allow-Headers': 'Content-Type'
 };
 
+function parseJsonBody(body) {
+  if (!body) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(body);
+  } catch (error) {
+    throw new ValidationError('Gönderilen JSON gövdesi çözümlenemedi.', {
+      cause: error,
+      details: { body }
+    });
+  }
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' };
   }
+
+  const requestContext = {
+    method: event.httpMethod,
+    path: event.path,
+    requestId: event.requestContext?.requestId
+  };
 
   try {
     if (event.httpMethod === 'GET') {
       const { class: className, date } = event.queryStringParameters || {};
 
       if (!className || !date) {
-        return {
-          statusCode: 400,
-          headers,
-          body: JSON.stringify({ error: 'Sınıf ve tarih zorunludur.' })
-        };
+        throw new ValidationError('Sınıf ve tarih zorunludur.', {
+          details: { className, date }
+        });
       }
 
       const students = await getStudentsWithAttendance(className, date);
@@ -51,23 +76,19 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === 'POST') {
-      const body = JSON.parse(event.body || '{}');
+      const body = parseJsonBody(event.body);
       const { studentId, date, status } = body;
 
       if (!studentId || !date || !status) {
-        return {
-          statusCode: 400,
-          headers,
-          body: JSON.stringify({ error: 'Öğrenci, tarih ve durum bilgileri zorunludur.' })
-        };
+        throw new ValidationError('Öğrenci, tarih ve durum bilgileri zorunludur.', {
+          details: { studentId, date, status }
+        });
       }
 
       if (!VALID_STATUSES.includes(status)) {
-        return {
-          statusCode: 400,
-          headers,
-          body: JSON.stringify({ error: 'Geçersiz yoklama durumu.' })
-        };
+        throw new ValidationError('Geçersiz yoklama durumu.', {
+          details: { status }
+        });
       }
 
       const result = await saveAttendance(studentId, date, status);
@@ -80,15 +101,13 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === 'DELETE') {
-      const body = JSON.parse(event.body || '{}');
+      const body = parseJsonBody(event.body);
       const { studentId, date } = body;
 
       if (!studentId || !date) {
-        return {
-          statusCode: 400,
-          headers,
-          body: JSON.stringify({ error: 'Öğrenci ve tarih bilgileri zorunludur.' })
-        };
+        throw new ValidationError('Öğrenci ve tarih bilgileri zorunludur.', {
+          details: { studentId, date }
+        });
       }
 
       const result = await deleteAttendance(studentId, date);
@@ -100,20 +119,17 @@ exports.handler = async (event) => {
       };
     }
 
-    return {
+    throw new ValidationError('İstek yöntemi desteklenmiyor.', {
       statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' })
-    };
+      details: { method: event.httpMethod },
+      publicMessage: 'İstek yöntemi desteklenmiyor.'
+    });
   } catch (error) {
-    console.error('Attendance API error:', error);
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({
-        error: 'Sunucu hatası',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
-      })
-    };
+    const appError = toAppError(error);
+    logError(appError, { ...requestContext, scope: 'attendance.handler' });
+
+    return buildErrorResponse(appError, headers, {
+      requestId: requestContext.requestId
+    });
   }
 };
