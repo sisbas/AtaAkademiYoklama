@@ -51,16 +51,19 @@ exports.handler = async (event) => {
 
   try {
     if (event.httpMethod === 'GET') {
-      const { class: className, date } = event.queryStringParameters || {};
+      const params = event.queryStringParameters || {};
+      const classId = params.classId || params.class;
+      const { date } = params;
 
-      if (!className || !date) {
+      if (!classId || !date) {
         throw new ValidationError('Sınıf ve tarih zorunludur.', {
-          details: { className, date }
+          details: { classId, date }
         });
       }
 
-      const students = await getStudentsWithAttendance(className, date);
+      const students = await getStudentsWithAttendance(classId, date);
       const recordedCount = students.filter(student => VALID_STATUSES.includes(student.status)).length;
+      const classInfo = getClassInfo(classId);
 
       return {
         statusCode: 200,
@@ -68,13 +71,14 @@ exports.handler = async (event) => {
         body: JSON.stringify({
           students,
           metadata: {
-            className,
+            classId: classInfo?.id || classId,
+            className: classInfo?.name || students[0]?.className || classId,
             date,
             total: students.length,
             recorded: recordedCount,
             hasAttendance: recordedCount > 0
           },
-          classInfo: getClassInfo(className)
+          classInfo
         })
       };
     }

@@ -410,13 +410,95 @@
     const API_BASE = resolveApiBase();
     const VALID_STATUSES = ['geldi', 'gelmedi', 'mazeretli', 'izinli'];
 
-    const defaultClassList = [
-      'TYT Sınıfı', '9. Sınıf', '10. Sınıf',
-      '11 Say 1', '11 Say 2', '11 Ea 1', '11 Ea 2',
-      '12 Say 1', '12 Say 2', '12 Say 3', '12 Ea 1', '12 Ea 2', '12 Ea 3',
-      'Mezun Ea 1', 'Mezun Ea 2', 'Mezun Ea 3',
-      'Mezun Say 1', 'Mezun Say 2', 'Mezun Say 3'
+    const DEFAULT_CLASSES = [
+      { id: 'tyt-sinifi', name: 'TYT Sınıfı' },
+      { id: '9-sinif', name: '9. Sınıf' },
+      { id: '10-sinif', name: '10. Sınıf' },
+      { id: '11-say-1', name: '11 Say 1' },
+      { id: '11-say-2', name: '11 Say 2' },
+      { id: '11-ea-1', name: '11 Ea 1' },
+      { id: '11-ea-2', name: '11 Ea 2' },
+      { id: '12-say-1', name: '12 Say 1' },
+      { id: '12-say-2', name: '12 Say 2' },
+      { id: '12-say-3', name: '12 Say 3' },
+      { id: '12-ea-1', name: '12 Ea 1' },
+      { id: '12-ea-2', name: '12 Ea 2' },
+      { id: '12-ea-3', name: '12 Ea 3' },
+      { id: 'mezun-ea-1', name: 'Mezun Ea 1' },
+      { id: 'mezun-ea-2', name: 'Mezun Ea 2' },
+      { id: 'mezun-ea-3', name: 'Mezun Ea 3' },
+      { id: 'mezun-say-1', name: 'Mezun Say 1' },
+      { id: 'mezun-say-2', name: 'Mezun Say 2' },
+      { id: 'mezun-say-3', name: 'Mezun Say 3' }
     ];
+
+    const defaultClassList = DEFAULT_CLASSES.map(cls => cls.name);
+
+    const DEFAULT_CLASS_MAP = new Map(DEFAULT_CLASSES.map(cls => [cls.id, { ...cls }]));
+    const DEFAULT_NAME_MAP = new Map(DEFAULT_CLASSES.map(cls => [cls.name.toLowerCase(), cls.id]));
+
+    function slugifyClassId(value) {
+      return value
+        .toString()
+        .trim()
+        .toLowerCase()
+        .replace(/ğ/g, 'g')
+        .replace(/ü/g, 'u')
+        .replace(/ş/g, 's')
+        .replace(/ı/g, 'i')
+        .replace(/ö/g, 'o')
+        .replace(/ç/g, 'c')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .replace(/-{2,}/g, '-') || 'sinif';
+    }
+
+    function normaliseClassEntry(entry) {
+      if (!entry) {
+        return null;
+      }
+
+      const name = entry.name || entry.className || entry.title || '';
+      const inferredId = entry.id || DEFAULT_NAME_MAP.get(name.toLowerCase());
+      const id = inferredId || (name ? slugifyClassId(name) : null);
+
+      if (!id) {
+        return null;
+      }
+
+      return {
+        ...entry,
+        id,
+        name: name || entry.id || id
+      };
+    }
+
+    function mergeClassCatalog(custom = []) {
+      const map = new Map(DEFAULT_CLASSES.map(cls => [cls.id, { ...cls }]));
+      custom.forEach(entry => {
+        const normalised = normaliseClassEntry(entry);
+        if (!normalised) {
+          return;
+        }
+
+        const existing = map.get(normalised.id) || {};
+        map.set(normalised.id, {
+          ...existing,
+          ...normalised
+        });
+      });
+
+      return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+    }
+
+    function getClassById(id, catalog) {
+      if (!id) {
+        return null;
+      }
+
+      const source = catalog || availableClasses;
+      return source.find(cls => cls.id === id) || DEFAULT_CLASS_MAP.get(id) || null;
+    }
 
     const classSelect = document.getElementById('classSelect');
     const dateInput = document.getElementById('dateInput');
@@ -426,6 +508,7 @@
     const loadButton = document.getElementById('loadButton');
 
     let classCatalog = [];
+    let availableClasses = mergeClassCatalog();
     let currentStudents = [];
     let currentMetadata = null;
     let scheduleNotification = null;
@@ -462,44 +545,57 @@
           throw new Error('Sınıf listesi alınamadı');
         }
 
-        classCatalog = await res.json();
+        const data = await res.json();
+        classCatalog = Array.isArray(data)
+          ? data.map(normaliseClassEntry).filter(Boolean)
+          : [];
+        availableClasses = mergeClassCatalog(classCatalog);
       } catch (error) {
         console.warn('Sınıf bilgileri yüklenemedi, varsayılan liste kullanılıyor.', error);
-        classCatalog = defaultClassList.map(name => ({ name, schedule: null, notes: 'Ders programı yakında güncellenecek.' }));
+        classCatalog = DEFAULT_CLASSES.map(cls => ({
+          ...cls,
+          notes: 'Ders programı yakında güncellenecek.'
+        }));
+        availableClasses = mergeClassCatalog(classCatalog);
       }
 
       populateClassSelect();
     }
 
     function populateClassSelect() {
+      const previousValue = classSelect.value;
       classSelect.innerHTML = '<option value="">Sınıf seçin...</option>';
-      classCatalog
-        .map(cls => cls.name)
-        .concat(defaultClassList)
-        .filter((value, index, array) => array.indexOf(value) === index)
-        .forEach(cls => {
-          const opt = document.createElement('option');
-          opt.value = cls;
-          opt.textContent = cls;
-          classSelect.appendChild(opt);
-        });
+      availableClasses.forEach(cls => {
+        const opt = document.createElement('option');
+        opt.value = cls.id;
+        opt.textContent = cls.name;
+        classSelect.appendChild(opt);
+      });
+
+      if (previousValue && availableClasses.some(cls => cls.id === previousValue)) {
+        classSelect.value = previousValue;
+      }
+
+      updateScheduleNotification();
     }
 
     async function loadAttendance() {
-      const cls = classSelect.value;
+      const classId = classSelect.value;
       const date = dateInput.value;
 
-      if (!cls || !date) {
+      if (!classId || !date) {
         showMessage('Lütfen sınıf ve tarih seçin.', 'warning');
         return;
       }
+
+      const selectedClassInfo = getClassById(classId);
 
       showLoading();
       attendanceNotification = null;
       renderNotifications();
 
       try {
-        const res = await fetch(`${API_BASE}/attendance?class=${encodeURIComponent(cls)}&date=${date}`);
+        const res = await fetch(`${API_BASE}/attendance?classId=${encodeURIComponent(classId)}&date=${date}`);
         const data = await res.json();
 
         if (!res.ok) {
@@ -508,10 +604,21 @@
         }
 
         currentStudents = data.students || [];
-        currentMetadata = data.metadata || { className: cls, date, total: currentStudents.length };
+        currentMetadata = data.metadata || {
+          classId,
+          className: selectedClassInfo?.name || classId,
+          date,
+          total: currentStudents.length
+        };
 
         if (data.classInfo) {
           upsertClassInfo(data.classInfo);
+        }
+
+        const resolvedInfo = getClassById(currentMetadata.classId || classId);
+        if (resolvedInfo) {
+          currentMetadata.classId = resolvedInfo.id;
+          currentMetadata.className = resolvedInfo.name;
         }
 
         updateScheduleNotification();
@@ -530,12 +637,20 @@
     }
 
     function upsertClassInfo(info) {
-      const index = classCatalog.findIndex(cls => cls.name === info.name);
-      if (index >= 0) {
-        classCatalog[index] = info;
-      } else {
-        classCatalog.push(info);
+      const normalised = normaliseClassEntry(info);
+      if (!normalised) {
+        return;
       }
+
+      const index = classCatalog.findIndex(cls => cls.id === normalised.id);
+      if (index >= 0) {
+        classCatalog[index] = { ...classCatalog[index], ...normalised };
+      } else {
+        classCatalog.push(normalised);
+      }
+
+      availableClasses = mergeClassCatalog(classCatalog);
+      populateClassSelect();
     }
 
     function displayAttendance(students, metadata) {
@@ -734,14 +849,14 @@
     }
 
     function updateScheduleNotification() {
-      const selectedClass = classSelect.value;
-      if (!selectedClass) {
+      const selectedClassId = classSelect.value;
+      if (!selectedClassId) {
         scheduleNotification = null;
         renderNotifications();
         return;
       }
 
-      const info = classCatalog.find(cls => cls.name === selectedClass);
+      const info = getClassById(selectedClassId);
       if (!info) {
         scheduleNotification = null;
         renderNotifications();

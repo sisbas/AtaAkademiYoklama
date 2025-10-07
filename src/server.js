@@ -11,6 +11,10 @@ const {
   saveAttendance,
   deleteAttendance
 } = require('./services/attendanceService');
+const { toAppError, logError } = require('./utils/errors');
+const { createLogger } = require('./utils/logger');
+
+const logger = createLogger('http');
 
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
@@ -83,6 +87,13 @@ function readRequestBody(req) {
 
 async function handleApiRequest(req, res, parsedUrl) {
   const pathname = parsedUrl.pathname;
+  const query = Object.fromEntries(parsedUrl.searchParams.entries());
+
+  logger.debug('API isteği alındı.', {
+    method: req.method,
+    path: pathname,
+    query
+  });
 
   if (req.method === 'OPTIONS') {
     handleOptions(res);
@@ -101,27 +112,29 @@ async function handleApiRequest(req, res, parsedUrl) {
     }
 
     if (pathname === '/api/attendance' && req.method === 'GET') {
-      const className = parsedUrl.searchParams.get('class');
+      const classId = parsedUrl.searchParams.get('classId') || parsedUrl.searchParams.get('class');
       const date = parsedUrl.searchParams.get('date');
 
-      if (!className || !date) {
+      if (!classId || !date) {
         sendJson(res, 400, { error: 'Sınıf ve tarih zorunludur.' });
         return true;
       }
 
-      const students = await getStudentsWithAttendance(className, date);
+      const students = await getStudentsWithAttendance(classId, date);
       const recordedCount = students.filter(student => VALID_STATUSES.includes(student.status)).length;
+      const classInfo = getClassInfo(classId);
 
       sendJson(res, 200, {
         students,
         metadata: {
-          className,
+          classId: classInfo?.id || classId,
+          className: classInfo?.name || students[0]?.className || classId,
           date,
           total: students.length,
           recorded: recordedCount,
           hasAttendance: recordedCount > 0
         },
-        classInfo: getClassInfo(className)
+        classInfo
       });
       return true;
     }
@@ -159,11 +172,30 @@ async function handleApiRequest(req, res, parsedUrl) {
       return true;
     }
   } catch (error) {
-    console.error('API hata:', error);
-    sendJson(res, 500, {
-      error: 'Sunucu hatası',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    const appError = toAppError(error);
+    logError(appError, {
+      scope: 'server.handleApiRequest',
+      method: req.method,
+      path: pathname,
+      query
     });
+
+    const payload = {
+      error: appError.publicMessage,
+      category: appError.category
+    };
+
+    if (appError.category === 'ValidationError' && appError.details) {
+      payload.details = appError.details;
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      payload.debug = {
+        message: appError.message
+      };
+    }
+
+    sendJson(res, appError.statusCode || 500, payload);
     return true;
   }
 
@@ -227,5 +259,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Ata Akademi yoklama sunucusu ${HOST}:${PORT} üzerinde çalışıyor.`);
+  logger.info('Ata Akademi yoklama sunucusu başlatıldı.', {
+    host: HOST,
+    port: Number(PORT)
+  });
 });
