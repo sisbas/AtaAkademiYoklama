@@ -394,6 +394,8 @@ async function getStudentsWithAttendance(classIdentifier, date) {
       () => fetchStudentsFromDatabase(classDefinition, normalisedDate),
       'Öğrenci listesi alınırken hata oluştu.',
       { allowFallbackOnError: true }
+
+      'Öğrenci listesi alınırken hata oluştu.'
     );
 
     if (students) {
