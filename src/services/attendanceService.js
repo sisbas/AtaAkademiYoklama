@@ -2,7 +2,8 @@ const db = require('../db');
 const {
   ValidationError,
   NetworkError,
-  InternalError
+  InternalError,
+  toAppError
 } = require('../utils/errors');
 const { createLogger } = require('../utils/logger');
 
@@ -194,6 +195,21 @@ function getFallbackKey(studentId, date) {
   return `${studentId}::${date}`;
 }
 
+function buildFallbackStudents(classDefinition, date) {
+  ensureFallbackNotice();
+
+  return fallbackStudents
+    .filter(student => student.classId === classDefinition.id)
+    .map(student => {
+      const key = getFallbackKey(student.id, date);
+      const status = fallbackAttendance.get(key) || '';
+      return {
+        ...student,
+        status
+      };
+    });
+}
+
 function ensureFallbackNotice() {
   if (fallbackActive && !ensureFallbackNotice.notified) {
     logger.warn('Veritabanına ulaşılamadığı için yoklama verileri bellek üzerinde tutuluyor.');
@@ -382,6 +398,7 @@ async function getStudentsWithAttendance(classIdentifier, date) {
   const classDefinition = requireClassDefinition(classIdentifier);
   const normalisedDate = normaliseIsoDate(date);
 
+
   logger.debug('Yoklama sorgusu alındı.', {
     classId: classDefinition.id,
     className: classDefinition.name,
@@ -398,12 +415,43 @@ async function getStudentsWithAttendance(classIdentifier, date) {
       'Öğrenci listesi alınırken hata oluştu.'
     );
 
-    if (students) {
-      return students;
-    }
-  }
 
-  ensureFallbackNotice();
+  const serveFallback = () => buildFallbackStudents(classDefinition, normalisedDate);
+
+  logger.debug('Yoklama sorgusu alındı.', {
+    classId: classDefinition.id,
+    className: classDefinition.name,
+    date: normalisedDate,
+    fallbackActive
+  });
+
+  try {
+    if (shouldAttemptDatabase()) {
+      const students = await attemptDatabaseOperation(
+        () => fetchStudentsFromDatabase(classDefinition, normalisedDate),
+        'Öğrenci listesi alınırken hata oluştu.',
+        { allowFallbackOnError: true }
+      );
+
+      if (students) {
+        return students;
+      }
+    }
+
+    return serveFallback();
+  } catch (error) {
+    const appError = toAppError(error);
+    if (appError.category === 'ValidationError') {
+      throw appError;
+    }
+
+    logger.error('Öğrenci listesi alınırken beklenmeyen hata oluştu, geçici hafıza kullanılacak.', {
+      error: {
+        name: error?.name,
+        message: error?.message
+      },
+      classId: classDefinition.id,
+      date: normalisedDate
 
   return fallbackStudents
     .filter(student => student.classId === classDefinition.id)
@@ -415,6 +463,13 @@ async function getStudentsWithAttendance(classIdentifier, date) {
         status
       };
     });
+
+    if (!fallbackActive) {
+      activateFallback(error);
+    }
+
+    return serveFallback();
+  }
 }
 
 async function saveAttendance(studentId, date, status) {
@@ -433,6 +488,34 @@ async function saveAttendance(studentId, date, status) {
     status
   });
 
+  try {
+    if (shouldAttemptDatabase()) {
+      const dbResult = await attemptDatabaseOperation(async () => {
+        const existing = await db.query(
+          'SELECT id, status FROM attendance WHERE student_id = $1 AND date = $2',
+          [normalizedId, normalisedDate]
+        );
+
+        if (existing.rows.length > 0) {
+          const current = existing.rows[0];
+          if (current.status === status) {
+            return {
+              operation: 'unchanged',
+              message: 'Yoklama zaten bu durum ile kayıtlı.'
+            };
+          }
+
+          await db.query(
+            'UPDATE attendance SET status = $1, updated_at = NOW() WHERE student_id = $2 AND date = $3',
+            [status, normalizedId, normalisedDate]
+          );
+
+  logger.debug('Yoklama kaydetme isteği alındı.', {
+    studentId: normalizedId,
+    date: normalisedDate,
+    status
+  });
+
   if (shouldAttemptDatabase()) {
     const dbResult = await attemptDatabaseOperation(async () => {
       const existing = await db.query(
@@ -440,25 +523,44 @@ async function saveAttendance(studentId, date, status) {
         [normalizedId, normalisedDate]
       );
 
-      if (existing.rows.length > 0) {
-        const current = existing.rows[0];
-        if (current.status === status) {
           return {
-            operation: 'unchanged',
-            message: 'Yoklama zaten bu durum ile kayıtlı.'
+            operation: 'updated',
+            message: 'Yoklama güncellendi.'
           };
         }
 
         await db.query(
+          'INSERT INTO attendance (student_id, date, status) VALUES ($1, $2, $3)',
+          [normalizedId, normalisedDate, status]
+
           'UPDATE attendance SET status = $1, updated_at = NOW() WHERE student_id = $2 AND date = $3',
           [status, normalizedId, normalisedDate]
         );
 
         return {
-          operation: 'updated',
-          message: 'Yoklama güncellendi.'
+          operation: 'created',
+          message: 'Yoklama kaydedildi.'
         };
+      }, 'Yoklama kaydedilirken hata oluştu.', { allowFallbackOnError: true });
+
+      if (dbResult) {
+        return dbResult;
       }
+    }
+  } catch (error) {
+    const appError = toAppError(error);
+    if (appError.category === 'ValidationError') {
+      throw appError;
+    }
+
+    logger.error('Yoklama kaydedilirken beklenmeyen hata oluştu, geçici hafıza kullanılacak.', {
+      error: {
+        name: error?.name,
+        message: error?.message
+      },
+      studentId: normalizedId,
+      date: normalisedDate
+    });
 
       await db.query(
         'INSERT INTO attendance (student_id, date, status) VALUES ($1, $2, $3)',
@@ -471,8 +573,8 @@ async function saveAttendance(studentId, date, status) {
       };
     }, 'Yoklama kaydedilirken hata oluştu.', { allowFallbackOnError: true });
 
-    if (dbResult) {
-      return dbResult;
+    if (!fallbackActive) {
+      activateFallback(error);
     }
   }
 
@@ -506,6 +608,26 @@ async function deleteAttendance(studentId, date) {
     date: normalisedDate
   });
 
+  try {
+    if (shouldAttemptDatabase()) {
+      const dbResult = await attemptDatabaseOperation(async () => {
+        await db.query(
+          'DELETE FROM attendance WHERE student_id = $1 AND date = $2',
+          [normalizedId, normalisedDate]
+        );
+
+        return {
+          success: true,
+          message: 'Yoklama silindi.'
+        };
+      }, 'Yoklama silinirken hata oluştu.', { allowFallbackOnError: true });
+
+
+  logger.debug('Yoklama silme isteği alındı.', {
+    studentId: normalizedId,
+    date: normalisedDate
+  });
+
   if (shouldAttemptDatabase()) {
     const dbResult = await attemptDatabaseOperation(async () => {
       await db.query(
@@ -519,8 +641,27 @@ async function deleteAttendance(studentId, date) {
       };
     }, 'Yoklama silinirken hata oluştu.', { allowFallbackOnError: true });
 
-    if (dbResult) {
-      return dbResult;
+      if (dbResult) {
+        return dbResult;
+      }
+    }
+  } catch (error) {
+    const appError = toAppError(error);
+    if (appError.category === 'ValidationError') {
+      throw appError;
+    }
+
+    logger.error('Yoklama silinirken beklenmeyen hata oluştu, geçici hafıza kullanılacak.', {
+      error: {
+        name: error?.name,
+        message: error?.message
+      },
+      studentId: normalizedId,
+      date: normalisedDate
+    });
+
+    if (!fallbackActive) {
+      activateFallback(error);
     }
   }
 
