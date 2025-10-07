@@ -5,6 +5,8 @@ Bu depo Ata Akademi yoklama takip sistemi için Express ve PostgreSQL tabanlı A
 ## Kurulum
 
 ```bash
+npm install
+cp ataakademi-backend/.env.example ataakademi-backend/.env # değerleri düzenleyin
 cd ataakademi-backend
 npm install
 cp .env.example .env # değerleri düzenleyin
@@ -39,6 +41,8 @@ npm run dev
 
 1. Heroku hesabı oluşturun veya giriş yapın.
 2. [Heroku CLI](https://devcenter.heroku.com/articles/heroku-cli) aracını kurun ve `heroku login` komutuyla giriş yapın.
+3. Proje dizininde (bu repo kökünde) yeni bir uygulama oluşturun:
+
 3. Proje dizininde yeni bir uygulama oluşturun:
    ```bash
    heroku create ata-akademi-yoklama
@@ -56,6 +60,13 @@ npm run dev
    heroku config:set CORS_ORIGINS="https://ata-akademi-frontend.netlify.app"
    heroku config:set RATE_LIMIT_WINDOW_MS=60000 RATE_LIMIT_MAX=120
    ```
+7. Kök dizindeki `package.json` ve `Procfile` sayesinde Heroku Node.js uygulamasını doğru algılayacaktır. Kodları gönderin:
+   ```bash
+   git push heroku main
+   ```
+8. Veritabanını initialize edin (workspace script'i üst dizinden çağırabilirsiniz):
+   ```bash
+   heroku run npm run seed
 7. Kodları Heroku'ya gönderin:
    ```bash
    git push heroku main
