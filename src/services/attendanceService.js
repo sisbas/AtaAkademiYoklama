@@ -1,4 +1,9 @@
 const db = require('../db');
+const {
+  ValidationError,
+  NetworkError,
+  InternalError
+} = require('../utils/errors');
 
 const CLASS_LIST = [
   'TYT Sınıfı',
@@ -173,7 +178,9 @@ function getClasses() {
 async function fetchStudentsFromDatabase(className, date) {
   const schema = await db.getStudentSchema();
   if (!schema) {
-    throw new Error('STUDENT_SCHEMA_UNAVAILABLE');
+    throw new InternalError('Öğrenci şeması alınamadı.', {
+      details: { reason: 'STUDENT_SCHEMA_UNAVAILABLE' }
+    });
   }
 
   const { idColumn, nameColumn, classColumn, orderColumn } = schema;
@@ -199,9 +206,19 @@ async function fetchStudentsFromDatabase(className, date) {
   }));
 }
 
+function wrapDatabaseError(error, message) {
+  if (isConnectionIssue(error)) {
+    return new NetworkError(message || 'Veritabanı bağlantısı sağlanamadı.', { cause: error });
+  }
+
+  return new InternalError(message || 'Veritabanı işlemi sırasında hata oluştu.', { cause: error });
+}
+
 async function getStudentsWithAttendance(className, date) {
   if (!className || !date) {
-    throw new Error('Sınıf ve tarih bilgileri zorunludur.');
+    throw new ValidationError('Sınıf ve tarih bilgileri zorunludur.', {
+      details: { className, date }
+    });
   }
 
   if (!fallbackActive) {
@@ -212,7 +229,7 @@ async function getStudentsWithAttendance(className, date) {
       if (isRecoverableDatabaseIssue(error)) {
         activateFallback(error);
       } else {
-        throw error;
+        throw wrapDatabaseError(error, 'Öğrenci listesi alınırken hata oluştu.');
       }
     }
   }
@@ -233,7 +250,9 @@ async function getStudentsWithAttendance(className, date) {
 
 async function saveAttendance(studentId, date, status) {
   if (!VALID_STATUSES.includes(status)) {
-    throw new Error('Geçersiz yoklama durumu.');
+    throw new ValidationError('Geçersiz yoklama durumu.', {
+      details: { status }
+    });
   }
 
   const normalizedId = `${studentId}`;
@@ -278,7 +297,7 @@ async function saveAttendance(studentId, date, status) {
       if (isRecoverableDatabaseIssue(error)) {
         activateFallback(error);
       } else {
-        throw error;
+        throw wrapDatabaseError(error, 'Yoklama kaydedilirken hata oluştu.');
       }
     }
   }
@@ -322,7 +341,7 @@ async function deleteAttendance(studentId, date) {
       if (isRecoverableDatabaseIssue(error)) {
         activateFallback(error);
       } else {
-        throw error;
+        throw wrapDatabaseError(error, 'Yoklama silinirken hata oluştu.');
       }
     }
   }
