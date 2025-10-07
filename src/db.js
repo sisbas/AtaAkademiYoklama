@@ -12,7 +12,6 @@ const databaseUrl =
   process.env.PG_CONNECTION_STRING ||
   process.env.POSTGRES_URL;
 
-const DEFAULT_CHANNEL_BINDING_MODE = process.env.PG_CHANNEL_BINDING_MODE || 'prefer';
 const FALLBACK_SSL_MODE = 'require';
 
 function normaliseDatabaseUrl(url) {
@@ -28,16 +27,14 @@ function normaliseDatabaseUrl(url) {
       params.set('sslmode', FALLBACK_SSL_MODE);
     }
 
-    if (!params.has('channel_binding')) {
-      params.set('channel_binding', DEFAULT_CHANNEL_BINDING_MODE);
-    }
-
-    if (!params.has('application_name')) {
-      params.set('application_name', 'ata-akademi-yoklama');
-    }
+    params.delete('channel_binding');
+    params.delete('application_name');
+    params.delete('channelBinding');
+    params.delete('applicationName');
+    params.delete('connect_timeout');
 
     if (!params.has('connect_timeout')) {
-      params.set('connect_timeout', '10');
+      params.set('connect_timeout', '30');
     }
 
     parsed.search = params.toString();
@@ -71,19 +68,21 @@ let pool;
 if (hasDatabase) {
   const poolConfig = {
     connectionString: normalisedDatabaseUrl,
-    max: parseInteger(process.env.PG_POOL_MAX ?? process.env.PG_MAX_CONNECTIONS, 10, { min: 1 }),
+    max: parseInteger(process.env.PG_POOL_MAX ?? process.env.PG_MAX_CONNECTIONS, 5, { min: 1 }),
     idleTimeoutMillis: parseInteger(process.env.PG_IDLE_TIMEOUT_MS, 10000, { min: 0 }),
     connectionTimeoutMillis: parseInteger(
       process.env.PG_CONNECTION_TIMEOUT_MS ?? process.env.PG_CONNECT_TIMEOUT_MS,
-      10000,
+      30000,
       { min: 1000 }
-    )
+    ),
+    statement_timeout: parseInteger(process.env.PG_STATEMENT_TIMEOUT_MS, 20000, { min: 1000 })
   };
 
   const shouldUseSSL = process.env.DATABASE_SSL !== 'false';
   if (shouldUseSSL) {
     poolConfig.ssl = {
-      rejectUnauthorized: false
+      rejectUnauthorized: false,
+      ca: undefined
     };
   }
 
@@ -109,29 +108,37 @@ async function ensureDatabase() {
 
   if (!initPromise) {
     initPromise = (async () => {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS attendance (
-          id SERIAL PRIMARY KEY,
-          student_id TEXT NOT NULL,
-          date DATE NOT NULL,
-          status TEXT NOT NULL CHECK (status IN ('geldi', 'gelmedi', 'mazeretli', 'izinli')),
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          CONSTRAINT unique_attendance UNIQUE (student_id, date)
-        )
-      `);
+      try {
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS attendance (
+            id SERIAL PRIMARY KEY,
+            student_id TEXT NOT NULL,
+            date DATE NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('geldi', 'gelmedi', 'mazeretli', 'izinli')),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT unique_attendance UNIQUE (student_id, date)
+          )
+        `);
 
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS attendance_date_idx ON attendance(date)
-      `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS attendance_date_idx ON attendance(date)
+        `);
 
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS attendance_student_idx ON attendance(student_id)
-      `);
-    })().catch(error => {
-      initPromise = undefined;
-      throw error;
-    });
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS attendance_student_idx ON attendance(student_id)
+        `);
+      } catch (error) {
+        initPromise = undefined;
+        logger.error('Veritabanı başlangıç işlemi sırasında hata oluştu.', {
+          error: {
+            message: error.message,
+            code: error.code
+          }
+        });
+        throw error;
+      }
+    })();
   }
 
   return initPromise;
@@ -144,54 +151,62 @@ async function getStudentSchema() {
 
   if (!studentSchemaPromise) {
     studentSchemaPromise = (async () => {
-      await ensureDatabase();
+      try {
+        await ensureDatabase();
 
-      const { rows } = await pool.query(`
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'students'
-      `);
+        const { rows } = await pool.query(`
+          SELECT column_name
+          FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'students'
+        `);
 
-      const columns = rows.map(row => row.column_name.toLowerCase());
+        const columns = rows.map(row => row.column_name.toLowerCase());
 
-      const idColumn =
-        (columns.includes('id') && 'id') ||
-        (columns.includes('student_id') && 'student_id');
+        const idColumn =
+          (columns.includes('id') && 'id') ||
+          (columns.includes('student_id') && 'student_id');
 
-      if (!idColumn) {
-        throw new Error('Students tablosunda birincil anahtar kolonu bulunamadı.');
+        if (!idColumn) {
+          throw new Error('Students tablosunda birincil anahtar kolonu bulunamadı.');
+        }
+
+        const nameColumn =
+          (columns.includes('name') && 'name') ||
+          (columns.includes('full_name') && 'full_name') ||
+          (columns.includes('student_name') && 'student_name') ||
+          (columns.includes('adsoyad') && 'adsoyad');
+
+        if (!nameColumn) {
+          throw new Error('Students tablosunda öğrenci adı için uygun bir kolon bulunamadı.');
+        }
+
+        const classColumn =
+          (columns.includes('class') && 'class') ||
+          (columns.includes('class_name') && 'class_name') ||
+          (columns.includes('sinif') && 'sinif') ||
+          (columns.includes('group_name') && 'group_name');
+
+        if (!classColumn) {
+          logger.info('Students tablosunda sınıf kolonu bulunamadı, enrollments tablosu kullanılacak.');
+        }
+
+        return {
+          idColumn,
+          nameColumn,
+          classColumn: classColumn || null,
+          orderColumn: nameColumn
+        };
+      } catch (error) {
+        studentSchemaPromise = undefined;
+        logger.error('Öğrenci şeması alınırken hata oluştu.', {
+          error: {
+            message: error.message,
+            code: error.code
+          }
+        });
+        throw error;
       }
-
-      const nameColumn =
-        (columns.includes('name') && 'name') ||
-        (columns.includes('full_name') && 'full_name') ||
-        (columns.includes('student_name') && 'student_name') ||
-        (columns.includes('adsoyad') && 'adsoyad');
-
-      if (!nameColumn) {
-        throw new Error('Students tablosunda öğrenci adı için uygun bir kolon bulunamadı.');
-      }
-
-      const classColumn =
-        (columns.includes('class') && 'class') ||
-        (columns.includes('class_name') && 'class_name') ||
-        (columns.includes('sinif') && 'sinif') ||
-        (columns.includes('group_name') && 'group_name');
-
-      if (!classColumn) {
-        throw new Error('Students tablosunda sınıf kolonu bulunamadı.');
-      }
-
-      return {
-        idColumn,
-        nameColumn,
-        classColumn,
-        orderColumn: nameColumn
-      };
-    })().catch(error => {
-      studentSchemaPromise = undefined;
-      throw error;
-    });
+    })();
   }
 
   return studentSchemaPromise;
@@ -206,7 +221,17 @@ module.exports = {
       throw new Error('DATABASE_URL ayarlanmadığı için veritabanına bağlanılamıyor.');
     }
 
-    await ensureDatabase();
-    return pool.query(text, params);
+    try {
+      await ensureDatabase();
+      return await pool.query(text, params);
+    } catch (error) {
+      logger.error('Veritabanı sorgusu yürütülürken hata oluştu.', {
+        error: {
+          message: error.message,
+          code: error.code
+        }
+      });
+      throw error;
+    }
   }
 };

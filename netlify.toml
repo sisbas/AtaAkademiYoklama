@@ -6,3 +6,13 @@
   from = "/attendance"
   to = "/.netlify/functions/attendance"
   status = 200
+
+[[redirects]]
+  from = "/api/classes"
+  to = "/.netlify/functions/classes"
+  status = 200
+
+[[redirects]]
+  from = "/api/attendance"
+  to = "/.netlify/functions/attendance"
+  status = 200

@@ -9,7 +9,9 @@
     "build": "rm -rf dist && mkdir -p dist && cp -R public/. dist",
     "deploy": "netlify deploy --prod",
     "test": "echo 'Tests not yet implemented'",
-    "ingest": "node scripts/ingest_students.js"
+    "ingest": "node scripts/ingest_students.js",
+    "build:netlify": "echo 'Netlify build complete'",
+    "postinstall": "echo 'Dependencies installed'"
   },
   "keywords": [
     "attendance",
