@@ -125,9 +125,6 @@ function createLogger(scope, baseContext = {}) {
   };
 }
 
-const logger = createLogger('app');
-
 module.exports = {
-  createLogger,
-  logger
+  createLogger
 };
