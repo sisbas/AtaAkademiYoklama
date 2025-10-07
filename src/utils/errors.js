@@ -1,3 +1,7 @@
+const { createLogger } = require('./logger');
+
+const errorLogger = createLogger('errors');
+
 const NETWORK_ERROR_CODES = new Set([
   'ECONNREFUSED',
   'ENOTFOUND',
@@ -131,7 +135,7 @@ function toAppError(error, fallbackMessage = 'Beklenmeyen bir hata oluştu.') {
 }
 
 function logError(error, context = {}) {
-  const logMethod = error.category === 'ValidationError' ? console.warn : console.error;
+  const logMethod = error.category === 'ValidationError' ? errorLogger.warn : errorLogger.error;
   const payload = {
     ...context,
     name: error.name,
@@ -153,7 +157,7 @@ function logError(error, context = {}) {
     }
   }
 
-  logMethod(`[${error.category}] ${error.message}`, payload);
+  logMethod(error.message, payload);
 }
 
 function buildErrorResponse(error, headers = {}, extraPayload = {}) {

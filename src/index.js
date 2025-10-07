@@ -1,5 +1,8 @@
 const setupGlobalErrorBoundary = require('./errorBoundary');
+const { createLogger } = require('./utils/logger');
+
+const logger = createLogger('bootstrap');
 
 setupGlobalErrorBoundary();
 
-console.log('Ata Akademi Yoklama uygulaması başlatılıyor...');
+logger.info('Ata Akademi Yoklama uygulaması başlatılıyor.');
