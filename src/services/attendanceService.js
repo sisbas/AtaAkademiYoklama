@@ -398,6 +398,24 @@ async function getStudentsWithAttendance(classIdentifier, date) {
   const classDefinition = requireClassDefinition(classIdentifier);
   const normalisedDate = normaliseIsoDate(date);
 
+
+  logger.debug('Yoklama sorgusu alındı.', {
+    classId: classDefinition.id,
+    className: classDefinition.name,
+    date: normalisedDate,
+    fallbackActive
+  });
+
+  if (shouldAttemptDatabase()) {
+    const students = await attemptDatabaseOperation(
+      () => fetchStudentsFromDatabase(classDefinition, normalisedDate),
+      'Öğrenci listesi alınırken hata oluştu.',
+      { allowFallbackOnError: true }
+
+      'Öğrenci listesi alınırken hata oluştu.'
+    );
+
+
   const serveFallback = () => buildFallbackStudents(classDefinition, normalisedDate);
 
   logger.debug('Yoklama sorgusu alındı.', {
@@ -434,6 +452,16 @@ async function getStudentsWithAttendance(classIdentifier, date) {
       },
       classId: classDefinition.id,
       date: normalisedDate
+
+  return fallbackStudents
+    .filter(student => student.classId === classDefinition.id)
+    .map(student => {
+      const key = getFallbackKey(student.id, normalisedDate);
+      const status = fallbackAttendance.get(key) || '';
+      return {
+        ...student,
+        status
+      };
     });
 
     if (!fallbackActive) {
@@ -482,6 +510,19 @@ async function saveAttendance(studentId, date, status) {
             [status, normalizedId, normalisedDate]
           );
 
+  logger.debug('Yoklama kaydetme isteği alındı.', {
+    studentId: normalizedId,
+    date: normalisedDate,
+    status
+  });
+
+  if (shouldAttemptDatabase()) {
+    const dbResult = await attemptDatabaseOperation(async () => {
+      const existing = await db.query(
+        'SELECT id, status FROM attendance WHERE student_id = $1 AND date = $2',
+        [normalizedId, normalisedDate]
+      );
+
           return {
             operation: 'updated',
             message: 'Yoklama güncellendi.'
@@ -491,6 +532,9 @@ async function saveAttendance(studentId, date, status) {
         await db.query(
           'INSERT INTO attendance (student_id, date, status) VALUES ($1, $2, $3)',
           [normalizedId, normalisedDate, status]
+
+          'UPDATE attendance SET status = $1, updated_at = NOW() WHERE student_id = $2 AND date = $3',
+          [status, normalizedId, normalisedDate]
         );
 
         return {
@@ -517,6 +561,17 @@ async function saveAttendance(studentId, date, status) {
       studentId: normalizedId,
       date: normalisedDate
     });
+
+      await db.query(
+        'INSERT INTO attendance (student_id, date, status) VALUES ($1, $2, $3)',
+        [normalizedId, normalisedDate, status]
+      );
+
+      return {
+        operation: 'created',
+        message: 'Yoklama kaydedildi.'
+      };
+    }, 'Yoklama kaydedilirken hata oluştu.', { allowFallbackOnError: true });
 
     if (!fallbackActive) {
       activateFallback(error);
@@ -566,6 +621,25 @@ async function deleteAttendance(studentId, date) {
           message: 'Yoklama silindi.'
         };
       }, 'Yoklama silinirken hata oluştu.', { allowFallbackOnError: true });
+
+
+  logger.debug('Yoklama silme isteği alındı.', {
+    studentId: normalizedId,
+    date: normalisedDate
+  });
+
+  if (shouldAttemptDatabase()) {
+    const dbResult = await attemptDatabaseOperation(async () => {
+      await db.query(
+        'DELETE FROM attendance WHERE student_id = $1 AND date = $2',
+        [normalizedId, normalisedDate]
+      );
+
+      return {
+        success: true,
+        message: 'Yoklama silindi.'
+      };
+    }, 'Yoklama silinirken hata oluştu.', { allowFallbackOnError: true });
 
       if (dbResult) {
         return dbResult;
