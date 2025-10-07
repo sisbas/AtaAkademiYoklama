@@ -89,6 +89,14 @@ const fallbackStudents = CLASS_LIST.flatMap((className, classIndex) =>
 const fallbackAttendance = new Map();
 
 let fallbackActive = !db.hasDatabase;
+const fallbackRetryValue = Number.parseInt(
+  process.env.FALLBACK_RETRY_INTERVAL_MS ?? '5000',
+  10
+);
+const FALLBACK_RETRY_INTERVAL_MS = Number.isFinite(fallbackRetryValue)
+  ? Math.max(fallbackRetryValue, 1000)
+  : 5000;
+let lastFallbackAttempt = 0;
 
 function getFallbackKey(studentId, date) {
   return `${studentId}::${date}`;
@@ -102,6 +110,34 @@ function ensureFallbackNotice() {
 }
 
 ensureFallbackNotice.notified = false;
+
+function resetFallbackNotice() {
+  ensureFallbackNotice.notified = false;
+}
+
+function markFallbackAttempt() {
+  lastFallbackAttempt = Date.now();
+}
+
+function shouldAttemptDatabase() {
+  if (!db.hasDatabase) {
+    return false;
+  }
+
+  if (!fallbackActive) {
+    return true;
+  }
+
+  return Date.now() - lastFallbackAttempt >= FALLBACK_RETRY_INTERVAL_MS;
+}
+
+function deactivateFallback() {
+  fallbackActive = false;
+  lastFallbackAttempt = 0;
+  fallbackAttendance.clear();
+  resetFallbackNotice();
+  console.info('Veritabanı bağlantısı yeniden sağlandı; geçici hafıza devre dışı bırakıldı.');
+}
 
 function isConnectionIssue(error) {
   const connectionErrorCodes = new Set(['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETUNREACH']);
@@ -131,8 +167,13 @@ function isConnectionIssue(error) {
 
 function activateFallback(error) {
   fallbackActive = true;
+  markFallbackAttempt();
   ensureFallbackNotice();
-  console.warn('Veritabanı bağlantısı hatası nedeniyle geçici hafıza moduna geçildi.', error);
+  if (error) {
+    console.warn('Veritabanı bağlantısı hatası nedeniyle geçici hafıza moduna geçildi.', error);
+  } else {
+    console.warn('Veritabanı bağlantısı hatası nedeniyle geçici hafıza moduna geçildi.');
+  }
 }
 
 function isRecoverableDatabaseIssue(error) {
@@ -214,6 +255,25 @@ function wrapDatabaseError(error, message) {
   return new InternalError(message || 'Veritabanı işlemi sırasında hata oluştu.', { cause: error });
 }
 
+async function attemptDatabaseOperation(operation, message) {
+  try {
+    const result = await operation();
+
+    if (fallbackActive) {
+      deactivateFallback();
+    }
+
+    return result;
+  } catch (error) {
+    if (isRecoverableDatabaseIssue(error)) {
+      activateFallback(error);
+      return null;
+    }
+
+    throw wrapDatabaseError(error, message);
+  }
+}
+
 async function getStudentsWithAttendance(className, date) {
   if (!className || !date) {
     throw new ValidationError('Sınıf ve tarih bilgileri zorunludur.', {
@@ -221,16 +281,14 @@ async function getStudentsWithAttendance(className, date) {
     });
   }
 
-  if (!fallbackActive) {
-    try {
-      const students = await fetchStudentsFromDatabase(className, date);
+  if (shouldAttemptDatabase()) {
+    const students = await attemptDatabaseOperation(
+      () => fetchStudentsFromDatabase(className, date),
+      'Öğrenci listesi alınırken hata oluştu.'
+    );
+
+    if (students) {
       return students;
-    } catch (error) {
-      if (isRecoverableDatabaseIssue(error)) {
-        activateFallback(error);
-      } else {
-        throw wrapDatabaseError(error, 'Öğrenci listesi alınırken hata oluştu.');
-      }
     }
   }
 
@@ -257,8 +315,8 @@ async function saveAttendance(studentId, date, status) {
 
   const normalizedId = `${studentId}`;
 
-  if (!fallbackActive) {
-    try {
+  if (shouldAttemptDatabase()) {
+    const dbResult = await attemptDatabaseOperation(async () => {
       const existing = await db.query(
         'SELECT id, status FROM attendance WHERE student_id = $1 AND date = $2',
         [normalizedId, date]
@@ -293,12 +351,10 @@ async function saveAttendance(studentId, date, status) {
         operation: 'created',
         message: 'Yoklama kaydedildi.'
       };
-    } catch (error) {
-      if (isRecoverableDatabaseIssue(error)) {
-        activateFallback(error);
-      } else {
-        throw wrapDatabaseError(error, 'Yoklama kaydedilirken hata oluştu.');
-      }
+    }, 'Yoklama kaydedilirken hata oluştu.');
+
+    if (dbResult) {
+      return dbResult;
     }
   }
 
@@ -326,8 +382,8 @@ async function saveAttendance(studentId, date, status) {
 async function deleteAttendance(studentId, date) {
   const normalizedId = `${studentId}`;
 
-  if (!fallbackActive) {
-    try {
+  if (shouldAttemptDatabase()) {
+    const dbResult = await attemptDatabaseOperation(async () => {
       await db.query(
         'DELETE FROM attendance WHERE student_id = $1 AND date = $2',
         [normalizedId, date]
@@ -337,12 +393,10 @@ async function deleteAttendance(studentId, date) {
         success: true,
         message: 'Yoklama silindi.'
       };
-    } catch (error) {
-      if (isRecoverableDatabaseIssue(error)) {
-        activateFallback(error);
-      } else {
-        throw wrapDatabaseError(error, 'Yoklama silinirken hata oluştu.');
-      }
+    }, 'Yoklama silinirken hata oluştu.');
+
+    if (dbResult) {
+      return dbResult;
     }
   }
 
